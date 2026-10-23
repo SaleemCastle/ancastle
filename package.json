@@ -2,8 +2,6 @@
   "name": "ancastle-farms",
   "version": "1.0.0",
   "private": true,
-  "description": "",
-  "main": "index.js",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -11,9 +9,6 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
