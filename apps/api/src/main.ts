@@ -17,7 +17,9 @@ async function bootstrap() {
     bufferLogs: true,
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', {
+    exclude: ['health'],
+  });
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useLogger(app.get(Logger));
 

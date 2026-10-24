@@ -22,15 +22,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       url: redisUrl,
       socket: {
         reconnectStrategy: (retries) => {
-          const maxRetries = 3;
-
-          if (retries >= maxRetries) {
-            return new Error(
-              `Redis connection failed after ${maxRetries} retries`,
-            );
-          }
-
-          return Math.min(100 * 2 ** retries, 1000);
+          return Math.min(100 * 2 ** retries, 5000);
         },
       },
     });

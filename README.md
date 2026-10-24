@@ -255,3 +255,30 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
+
+## API Health Check
+
+The API exposes a health endpoint for deployment and monitoring infrastructure:
+
+`GET /health`
+
+The health check verifies:
+
+- API availability
+- PostgreSQL connectivity
+- Redis connectivity
+
+### Healthy response
+
+Returns HTTP `200` when all critical dependencies are available.
+
+### Unhealthy response
+
+Returns HTTP `503` when PostgreSQL or Redis is unavailable.
+
+The response reports only the status of each dependency and does not expose
+connection URLs, credentials, hostnames, exception messages, or other sensitive
+infrastructure details.
+
+The endpoint is suitable for container health checks, load balancers,
+deployment platforms, and monitoring systems.
