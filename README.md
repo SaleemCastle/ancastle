@@ -181,3 +181,51 @@ Server-side structured logging is handled separately from the client response.
 ### Health Endpoint
 
 `/api/health` is an infrastructure endpoint and is not required to use the normal business API `data` envelope.
+
+## Application Logging
+
+The Ancastle Farms API uses Pino through `nestjs-pino` for structured application and HTTP request logging.
+
+### Log Levels
+
+The active log level is controlled using:
+
+```env
+LOG_LEVEL=info
+```
+
+Development environments may use `debug`. Production should normally use `info` or a more restrictive level.
+
+### Structured Context
+
+Prefer structured metadata instead of interpolating identifiers into log messages.
+
+```ts
+logger.log({
+  customerId,
+  orderId,
+  message: 'Order created',
+});
+```
+
+Logs should include only the context necessary to diagnose or observe the operation.
+
+### Sensitive Information
+
+Passwords, authorization headers, cookies, access tokens, refresh tokens, secrets and similar credentials must never be intentionally logged.
+
+The logger also configures redaction for known sensitive fields as a defensive measure.
+
+Avoid logging entire request bodies or DTOs.
+
+### Errors
+
+Expected validation, business-rule and ordinary HTTP errors are returned through the standard API error convention without automatically generating error-level logs.
+
+Unexpected server exceptions are logged with diagnostic information on the server while clients receive the sanitized `INTERNAL_SERVER_ERROR` response.
+
+### HTTP Requests
+
+HTTP requests are logged automatically with structured context including request ID, method, URL, response status and response time.
+
+Direct `console.log` should not be used as the production application logging strategy.
