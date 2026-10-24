@@ -7,8 +7,8 @@ import { createLoggerConfig } from './config/logger.config.js';
 
 @Module({
   imports: [
-    HealthModule, 
-    DatabaseModule, 
+    HealthModule,
+    DatabaseModule,
     RedisModule,
     LoggerModule.forRoot(createLoggerConfig()),
   ],

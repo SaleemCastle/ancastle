@@ -1,18 +1,18 @@
 {
-  "name": "@ancastle/validation",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "zod": "^4.0.0"
-  },
-  "devDependencies": {
-    "typescript": "^6.0.0"
-  }
+    "name": "@ancastle/validation",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "zod": "^4.0.0"
+    },
+    "devDependencies": {
+        "typescript": "^6.0.0"
+    }
 }

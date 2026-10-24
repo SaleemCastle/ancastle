@@ -7,6 +7,7 @@ Ancastle Farms uses PostgreSQL with Prisma.
 ```bash
 docker compose up -d postgres
 ```
+
 ## Redis
 
 ### Start Redis:
@@ -79,9 +80,9 @@ Single-resource and command responses use a `data` envelope:
 
 ```json
 {
-  "data": {
-    "id": "123"
-  }
+    "data": {
+        "id": "123"
+    }
 }
 ```
 
@@ -93,13 +94,13 @@ Paginated endpoints return the collection in `data` and pagination information i
 
 ```json
 {
-  "data": [],
-  "meta": {
-    "page": 1,
-    "pageSize": 20,
-    "totalItems": 57,
-    "totalPages": 3
-  }
+    "data": [],
+    "meta": {
+        "page": 1,
+        "pageSize": 20,
+        "totalItems": 57,
+        "totalPages": 3
+    }
 }
 ```
 
@@ -111,14 +112,14 @@ Request validation failures use the `VALIDATION_ERROR` code and provide field-le
 
 ```json
 {
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Validation failed",
-    "fields": {
-      "email": ["Invalid email address"],
-      "name": ["Name is required"]
+    "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "Validation failed",
+        "fields": {
+            "email": ["Invalid email address"],
+            "name": ["Name is required"]
+        }
     }
-  }
 }
 ```
 
@@ -130,10 +131,10 @@ Domain and business-rule failures expose stable machine-readable error codes:
 
 ```json
 {
-  "error": {
-    "code": "INSUFFICIENT_STOCK",
-    "message": "There is insufficient stock to fulfil this order"
-  }
+    "error": {
+        "code": "INSUFFICIENT_STOCK",
+        "message": "There is insufficient stock to fulfil this order"
+    }
 }
 ```
 
@@ -154,10 +155,10 @@ Standard HTTP exceptions are converted to the common error envelope:
 
 ```json
 {
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "Customer was not found"
-  }
+    "error": {
+        "code": "NOT_FOUND",
+        "message": "Customer was not found"
+    }
 }
 ```
 
@@ -167,10 +168,10 @@ Unexpected server errors return:
 
 ```json
 {
-  "error": {
-    "code": "INTERNAL_SERVER_ERROR",
-    "message": "An unexpected error occurred"
-  }
+    "error": {
+        "code": "INTERNAL_SERVER_ERROR",
+        "message": "An unexpected error occurred"
+    }
 }
 ```
 
@@ -202,9 +203,9 @@ Prefer structured metadata instead of interpolating identifiers into log message
 
 ```ts
 logger.log({
-  customerId,
-  orderId,
-  message: 'Order created',
+    customerId,
+    orderId,
+    message: 'Order created',
 });
 ```
 
