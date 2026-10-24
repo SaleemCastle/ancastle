@@ -230,3 +230,28 @@ Unexpected server exceptions are logged with diagnostic information on the serve
 HTTP requests are logged automatically with structured context including request ID, method, URL, response status and response time.
 
 Direct `console.log` should not be used as the production application logging strategy.
+
+## Continuous Integration
+
+GitHub Actions validates repository quality on pull requests targeting `main`
+and pushes to `main`.
+
+The CI pipeline performs:
+
+1. Dependency installation using the committed pnpm lockfile
+2. Prettier formatting verification
+3. Linting
+4. TypeScript type checking
+5. Automated tests
+6. Production builds
+
+Run the same checks locally before opening a pull request:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
