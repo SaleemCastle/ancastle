@@ -1,17 +1,20 @@
-import { Controller, Get } from '@nestjs/common';
-import type { HealthStatus } from '@ancastle/types';
-import { healthStatusSchema } from '@ancastle/validation';
+import { Controller, Get, HttpCode, HttpStatus, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { HealthService } from './health.service.js';
 
 @Controller('health')
 export class HealthController {
-  @Get()
-  getHealth(): HealthStatus {
-    const response: HealthStatus = {
-      status: 'ok',
-      service: 'ancastle-api',
-      timestamp: new Date().toISOString(),
-    };
+  constructor(private readonly healthService: HealthService) {}
 
-    return healthStatusSchema.parse(response);
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  async getHealth(@Res() response: Response): Promise<void> {
+    const health = await this.healthService.check();
+
+    response
+      .status(
+        health.status === 'ok' ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE,
+      )
+      .json(health);
   }
 }
