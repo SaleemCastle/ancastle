@@ -4,22 +4,38 @@ services:
     container_name: ancastle-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ancastle
-      POSTGRES_PASSWORD: ancastle_dev
-      POSTGRES_DB: ancastle_farms
+      POSTGRES_USER: ${POSTGRES_USER:-ancastle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ancastle_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-ancastle_farms}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ancastle_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-ancastle} -d ${POSTGRES_DB:-ancastle_farms}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   redis:
     image: redis:8-alpine
     container_name: ancastle-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - ancastle_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   ancastle_postgres_data:
