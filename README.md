@@ -255,4 +255,3 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
-CI_FAILURE_TEST       =        true
