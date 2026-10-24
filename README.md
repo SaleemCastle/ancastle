@@ -6,3 +6,10 @@ Ancastle Farms uses PostgreSQL with Prisma.
 
 ```bash
 docker compose up -d postgres
+```
+## Redis
+
+### Start Redis:
+
+```bash
+docker compose up -d redis
