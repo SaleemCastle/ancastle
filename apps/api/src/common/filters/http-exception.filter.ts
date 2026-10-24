@@ -4,6 +4,7 @@ import {
     ExceptionFilter,
     HttpException,
     HttpStatus,
+    Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import type { ApiErrorResponse } from '@ancastle/types';
@@ -12,6 +13,8 @@ import { ValidationException } from '../exceptions/validation.exception.js';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+    private readonly logger = new Logger(HttpExceptionFilter.name);
+
     catch(exception: unknown, host: ArgumentsHost): void {
         const response = host.switchToHttp().getResponse<Response>();
 
@@ -58,6 +61,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
             response.status(status).json(body);
             return;
+        }
+
+        if (exception instanceof Error) {
+            this.logger.error(
+                exception.message,
+                exception.stack,
+            );
+        } else {
+            this.logger.error('Unknown internal error');
         }
 
         const body: ApiErrorResponse = {
