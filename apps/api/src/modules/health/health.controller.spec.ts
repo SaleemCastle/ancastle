@@ -15,7 +15,7 @@ describe('HealthController', () => {
 
     describe('check', () => {
         it('should return the API health status', () => {
-            const result = controller.check();
+            const result = controller.getHealth();
 
             expect(result.status).toBe('ok');
             expect(result.service).toBe('ancastle-api');

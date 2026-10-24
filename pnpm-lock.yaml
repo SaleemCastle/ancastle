@@ -172,6 +172,12 @@ importers:
 
   apps/api:
     dependencies:
+      '@ancastle/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@ancastle/validation':
+        specifier: workspace:*
+        version: link:../../packages/validation
       '@nestjs/common':
         specifier: ^12.0.1
         version: 12.2.0(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0)
@@ -254,6 +260,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@ancastle/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@ancastle/validation':
+        specifier: workspace:*
+        version: link:../../packages/validation
       '@base-ui/react':
         specifier: ^1.9.0
         version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -306,6 +318,22 @@ importers:
       typescript:
         specifier: ^5
         version: 5.9.3
+
+  packages/types:
+    devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
+
+  packages/validation:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.6.7
+    devDependencies:
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.3
 
 packages:
 
