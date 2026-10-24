@@ -68,3 +68,116 @@ The validation package remains independent of Prisma and database implementation
 Prisma models belong to the API persistence layer and must not be imported directly by the frontend.
 
 Data exposed to the frontend should be mapped to explicit API contracts defined in the shared packages.
+
+## API Response Conventions
+
+Ancastle Farms uses consistent response and error formats across business API endpoints.
+
+### Successful Response
+
+Single-resource and command responses use a `data` envelope:
+
+```json
+{
+  "data": {
+    "id": "123"
+  }
+}
+```
+
+The shared TypeScript contract is `ApiResponse<T>` from `@ancastle/types`.
+
+### Paginated Collections
+
+Paginated endpoints return the collection in `data` and pagination information in `meta`:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "page": 1,
+    "pageSize": 20,
+    "totalItems": 57,
+    "totalPages": 3
+  }
+}
+```
+
+The shared contract is `PaginatedResponse<T>`.
+
+### Validation Errors
+
+Request validation failures use the `VALIDATION_ERROR` code and provide field-level messages:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "fields": {
+      "email": ["Invalid email address"],
+      "name": ["Name is required"]
+    }
+  }
+}
+```
+
+Zod schemas should be used with the shared `ZodValidationPipe` for API boundary validation.
+
+### Business Rule Errors
+
+Domain and business-rule failures expose stable machine-readable error codes:
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_STOCK",
+    "message": "There is insufficient stock to fulfil this order"
+  }
+}
+```
+
+Business services should throw `BusinessException` with an appropriate HTTP status and stable error code.
+
+Error codes should describe the business condition rather than implementation details.
+
+Examples:
+
+- `CUSTOMER_NOT_FOUND`
+- `INSUFFICIENT_STOCK`
+- `ORDER_ALREADY_FULFILLED`
+- `INVOICE_ALREADY_PAID`
+
+### HTTP Errors
+
+Standard HTTP exceptions are converted to the common error envelope:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Customer was not found"
+  }
+}
+```
+
+### Internal Errors
+
+Unexpected server errors return:
+
+```json
+{
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "An unexpected error occurred"
+  }
+}
+```
+
+Internal exception messages and stack traces must never be exposed to API clients.
+
+Server-side structured logging is handled separately from the client response.
+
+### Health Endpoint
+
+`/api/health` is an infrastructure endpoint and is not required to use the normal business API `data` envelope.
