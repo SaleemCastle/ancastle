@@ -6,6 +6,9 @@ dotenv.config({
 	path: '../../.env',
 });
 
+import { validateEnvironment } from './config/env.validation.js';
+const env = validateEnvironment(process.env);
+
 async function bootstrap() {
 	const { NestFactory } = await import('@nestjs/core');
 	const { AppModule } = await import('./app.module.js');
@@ -18,9 +21,7 @@ async function bootstrap() {
 	app.useGlobalFilters(new HttpExceptionFilter());
 	app.useLogger(app.get(Logger));
 
-	const port = process.env.API_PORT ?? 4000;
-
-	await app.listen(port);
+	await app.listen(env.API_PORT);
 }
 
 void bootstrap();
