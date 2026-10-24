@@ -3,3 +3,5 @@ export interface HealthStatus {
     service: string;
     timestamp: string;
 }
+
+export * from './api.js';
