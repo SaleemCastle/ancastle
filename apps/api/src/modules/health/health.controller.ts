@@ -4,14 +4,14 @@ import { healthStatusSchema } from '@ancastle/validation';
 
 @Controller('health')
 export class HealthController {
-    @Get()
-    getHealth(): HealthStatus {
-        const response: HealthStatus = {
-            status: 'ok',
-            service: 'ancastle-api',
-            timestamp: new Date().toISOString(),
-        };
+  @Get()
+  getHealth(): HealthStatus {
+    const response: HealthStatus = {
+      status: 'ok',
+      service: 'ancastle-api',
+      timestamp: new Date().toISOString(),
+    };
 
-        return healthStatusSchema.parse(response);
-    }
+    return healthStatusSchema.parse(response);
+  }
 }

@@ -3,9 +3,7 @@ export default function DashboardPage() {
         <div>
             <h1 className="text-2xl font-semibold">Dashboard</h1>
 
-            <p className="mt-2 text-gray-600">
-                Welcome to Ancastle Farms.
-            </p>
+            <p className="mt-2 text-gray-600">Welcome to Ancastle Farms.</p>
         </div>
     );
 }
