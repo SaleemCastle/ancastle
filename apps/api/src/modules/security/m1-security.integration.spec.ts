@@ -672,6 +672,10 @@ describe('M1 milestone security workflow (HTTP + PostgreSQL)', () => {
         .post('/api/auth/refresh')
         .send({ refreshToken: owner.refreshToken }),
     ]);
-    expect(responses.map((entry) => entry.status).sort()).toEqual([201, 401]);
+    expect(
+      responses
+        .map((entry) => entry.status)
+        .sort((left, right) => left - right),
+    ).toEqual([201, 401]);
   });
 });
