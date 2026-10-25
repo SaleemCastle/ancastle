@@ -1,8 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Request } from 'express';
+import { z } from 'zod';
 import { PrismaService } from '../../database/prisma.service.js';
-import type { AuthenticatedUser } from '../auth/authenticated-user.js';
 import { AuthorizationService } from './authorization.service.js';
 import {
   ORGANIZATION_PARAM_KEY,
@@ -10,10 +9,12 @@ import {
 } from './require-permissions.decorator.js';
 import type { Permission } from './permissions.js';
 import { BusinessException } from '../../common/exceptions/business.exception.js';
+import {
+  OrganizationContext,
+  type OrganizationRequest,
+} from './organization-context.js';
 
-type AuthorizedRequest = Request & {
-  user?: AuthenticatedUser;
-};
+const organizationIdSchema = z.uuid();
 
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
@@ -24,46 +25,47 @@ export class AuthorizationGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<OrganizationRequest>();
+    delete request.organizationContext;
+
     const requiredPermissions = this.reflector.getAllAndOverride<Permission[]>(
       REQUIRED_PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const organizationParam = this.reflector.getAllAndOverride<string>(
+      ORGANIZATION_PARAM_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
-    if (!requiredPermissions || requiredPermissions.length === 0) {
+    if (!organizationParam && !requiredPermissions?.length) {
       return true;
     }
-
-    const request = context.switchToHttp().getRequest<AuthorizedRequest>();
 
     if (!request.user) {
       throw this.forbidden();
     }
 
-    const organizationParam =
-      this.reflector.getAllAndOverride<string>(ORGANIZATION_PARAM_KEY, [
-        context.getHandler(),
-        context.getClass(),
-      ]) ?? 'organizationId';
-
-    const rawOrganizationId = request.params?.[organizationParam];
-
-    if (!rawOrganizationId || typeof rawOrganizationId !== 'string') {
-      throw this.forbidden();
-    }
-    const organizationId = rawOrganizationId;
-
-    if (!organizationId) {
+    // The route selects a membership to verify; it never establishes authority.
+    const selectedOrganization = organizationIdSchema.safeParse(
+      request.params?.[organizationParam ?? 'organizationId'],
+    );
+    if (!selectedOrganization.success) {
       throw this.forbidden();
     }
 
     const membership = await this.prisma.organizationMembership.findUnique({
       where: {
         organizationId_userId: {
-          organizationId,
+          organizationId: selectedOrganization.data,
           userId: request.user.id,
         },
       },
-      include: {
+      select: {
+        id: true,
+        organizationId: true,
+        userId: true,
+        role: true,
+        isActive: true,
         organization: {
           select: {
             isActive: true,
@@ -83,11 +85,18 @@ export class AuthorizationGuard implements CanActivate {
     if (
       !this.authorizationService.hasAllPermissions(
         membership.role,
-        requiredPermissions,
+        requiredPermissions ?? [],
       )
     ) {
       throw this.forbidden();
     }
+
+    request.organizationContext = new OrganizationContext(
+      membership.organizationId,
+      membership.id,
+      membership.userId,
+      membership.role,
+    );
 
     return true;
   }

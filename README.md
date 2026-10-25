@@ -1186,3 +1186,87 @@ Foundation capabilities include:
 - Local developer onboarding documentation
 
 Future milestones build the farm-management domain functionality on top of this foundation.
+
+---
+
+# Organization Request Context and Tenant Isolation
+
+Access tokens identify a user, not a universal organization role. Organization selection
+continues to use the route parameter established by M1-04. The route ID is only a selector:
+`AuthorizationGuard` looks up the authenticated user's membership in that organization on
+every scoped request, checks membership and organization lifecycle state, and evaluates
+permissions using that membership's current role. It never uses body, query, or header IDs,
+roles, membership IDs, or permission claims as authorization evidence. There is no default
+organization or fallback to the user's first/strongest membership.
+
+Apply `@UseGuards(AuthGuard, AuthorizationGuard)` in that order. Declare
+`@OrganizationParam()` (or a custom route parameter name) to require context even on
+endpoints without additional permissions. Existing `@RequirePermissions(...)` endpoints
+also require context, using `organizationId` by default. Both decorators support controller
+and method metadata. Import `AuthModule` and `AuthorizationModule` in consuming modules.
+
+`AuthorizationGuard` attaches an immutable `request.organizationContext` after successful
+checks. `@CurrentOrganization()` retrieves it and fails closed when it is absent. The
+context exposes only `organizationId`, `membershipId`, `userId`, and the selected
+membership's `role`; it is an internal server type, not a public API or input DTO. Do not
+construct it from request payloads or serialize it as an application response.
+
+Future domain services should accept the verified context explicitly:
+
+```ts
+@UseGuards(AuthGuard, AuthorizationGuard)
+@OrganizationParam()
+@Controller('organizations/:organizationId/example')
+export class ExampleController {
+    @Get(':id')
+    @RequirePermissions(Permission.FARM_READ)
+    read(@CurrentOrganization() context: OrganizationContext, @Param('id') id: string) {
+        return this.service.read(context, id);
+    }
+}
+```
+
+Validate resource IDs and DTOs with Zod before querying. For organization-owned records,
+use `context.scope(filters)` in the database query:
+
+```ts
+const farm = await prisma.farm.findFirst({
+    where: context.scope({ id: resourceId }),
+    select: { id: true, name: true },
+});
+if (!farm) {
+    throw new BusinessException('FARM_NOT_FOUND', 'Farm was not found', 404);
+}
+```
+
+The helper combines filters and authoritative `organizationId` with `AND`, so `OR`,
+`NOT`, or conflicting ownership filters cannot widen the tenant boundary. Use the same
+scope for lists, counts, aggregates, relations and writes. For the Organization record
+itself, constrain its primary `id` to `context.organizationId`; it has no
+`organizationId` column. For creation, explicitly select allowed input fields and assign
+ownership from context. Never spread an arbitrary payload into persistence data.
+
+Updates should include resource ID and organization ownership in the write predicate.
+For example, `updateMany({ where: context.scope({ id }), data: validatedFields })`
+allows a zero count to become the same sanitized not-found error as a missing record,
+without a preceding unscoped lookup. Never allow update data to replace tenant ownership.
+Scope related-record lookups as well; a scoped parent alone does not validate a supplied
+foreign key.
+
+Missing/malformed organization selection, absent/inactive membership, inactive
+organization, and insufficient permissions return the same sanitized `403 FORBIDDEN`.
+Authentication failures remain `401` through `AuthGuard`. Inaccessible resource IDs
+within a valid scope must return the same `404` envelope as nonexistent IDs. Avoid
+unscoped existence checks and raw Prisma exceptions in public responses.
+
+Organization membership does not imply access to every farm. M1-06 adds assignment-based
+farm context and M1-07 adds management APIs; neither is introduced by M1-05. Future
+background jobs must also resolve and verify authoritative context before calling
+tenant-scoped services.
+
+`organization-isolation.integration.spec.ts` runs with `pnpm test` using the migrated
+PostgreSQL database configured by `DATABASE_URL` (local setup loads the root `.env`).
+It uses isolated UUID fixtures and test-only HTTP controllers, real JWT verification,
+the production guards/decorator/scoping helper, and real Prisma queries. It checks
+read/write boundaries, role separation across memberships, spoofed payloads, inactive
+states, indistinguishable failures, and concurrent organization requests.
