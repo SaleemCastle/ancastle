@@ -327,9 +327,19 @@ export class UsersService {
           { isolationLevel: 'Serializable' },
         );
       } catch (error) {
+        // The pinned PostgreSQL adapter may report commit conflicts directly,
+        // before Prisma wraps them as P2034. Retry only that specific cause.
+        const adapterConflict =
+          error instanceof Error &&
+          error.name === 'DriverAdapterError' &&
+          typeof error.cause === 'object' &&
+          error.cause !== null &&
+          'kind' in error.cause &&
+          error.cause.kind === 'TransactionWriteConflict';
         if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2034'
+          adapterConflict ||
+          (error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2034')
         ) {
           if (attempt < 2) continue;
           throw new BusinessException(
