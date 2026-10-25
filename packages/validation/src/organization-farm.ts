@@ -40,3 +40,32 @@ export type OrganizationProfileUpdateInput = z.infer<typeof organizationProfileU
 export type CreateFarmInput = z.infer<typeof createFarmSchema>;
 export type UpdateFarmInput = z.infer<typeof updateFarmSchema>;
 export type FarmListQuery = z.infer<typeof farmListQuerySchema>;
+
+export const organizationProfileSchema = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    slug: z.string(),
+    isActive: z.boolean(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+});
+export const farmDetailsSchema = z.object({
+    id: z.uuid(),
+    organizationId: z.uuid(),
+    name: z.string(),
+    code: z.string(),
+    isActive: z.boolean(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+});
+export const organizationResponseSchema = z.object({ data: organizationProfileSchema });
+export const farmResponseSchema = z.object({ data: farmDetailsSchema });
+export const farmListResponseSchema = z.object({
+    data: z.array(farmDetailsSchema),
+    meta: z.object({
+        page: z.number().int().positive(),
+        pageSize: z.number().int().positive(),
+        totalItems: z.number().int().nonnegative(),
+        totalPages: z.number().int().nonnegative(),
+    }),
+});

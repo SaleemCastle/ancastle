@@ -1605,3 +1605,34 @@ M1-10 adds no schema migration. Unit, HTTP/PostgreSQL and production browser tes
 cover scoped discovery, separate roles across organizations, automatic single-farm
 selection, multiple farms, navigation/reload, client selection tampering, revoked
 grants, inactive memberships/farms, empty states and responsive layouts.
+
+---
+
+# Organization and Farm Administration UI
+
+Within the authenticated shell, **Organization settings** opens
+`/app/settings/organization` and **Farms** opens `/app/farms`. These are
+organization-level management routes; their navigation carries the selected
+organization. Dashboard/farm-operation selection remains separate. Farm details
+use `/app/farms/<uuid>` and creation uses `/app/farms/new`.
+
+Organization settings shows the current profile, slug and lifecycle information.
+Only organization-update permission exposes the name-edit form. Farms uses the
+existing access-scoped paginated API, with active/inactive filters and safe empty
+states. Create/edit/lifecycle controls appear only with the corresponding fresh
+permissions. Other members can view their accessible records without edit controls.
+Deactivation/reactivation uses the existing non-destructive PATCH API.
+
+Server Actions independently recheck origin, authenticated organization membership
+and current permissions before calling the guarded API. Form IDs only select
+resources to verify. Actions whitelist supported fields, validate shared Zod
+contracts, reject duplicate/malformed selectors, and never forward ownership or
+role claims as authorization. API calls remain server-side and reuse Redis-backed
+refresh coordination. Shared response schemas strip unexpected fields. Known
+business codes map to fixed UI messages; raw upstream errors and internal details
+are never reflected. Successful mutations refresh the shell and affected views.
+
+The browser suite covers organization updates, complete farm lifecycle, validation
+and duplicate codes, read-only access, cross-organization read/write attempts,
+tampered IDs, stale permissions, pagination/filtering, outages/retry/pending states,
+and mobile/desktop layouts. Existing API security tests remain unchanged.

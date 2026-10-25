@@ -34,7 +34,11 @@ const server = createServer(async (request, response) => {
             response.end('ok');
             return;
         }
-        if (!path.startsWith('/api/auth/') && !path.startsWith('/api/application/context')) {
+        if (
+            !path.startsWith('/api/auth/') &&
+            !path.startsWith('/api/application/context') &&
+            !path.startsWith('/api/organizations/')
+        ) {
             response.writeHead(404);
             response.end();
             return;
@@ -42,10 +46,13 @@ const server = createServer(async (request, response) => {
         const operation = path.split('/').at(-1);
         if (operation === 'login' || operation === 'refresh' || operation === 'logout')
             counters[operation]++;
+        if (path.startsWith('/api/organizations/') && mode.organizationDelay)
+            await new Promise((resolve) => setTimeout(resolve, mode.organizationDelay));
         if (path.startsWith('/api/application/context') && mode.contextDelay)
             await new Promise((resolve) => setTimeout(resolve, mode.contextDelay));
         if (
             mode.unavailable ||
+            (mode.organizationUnavailable && path.startsWith('/api/organizations/')) ||
             (mode.contextUnavailable && path.startsWith('/api/application/context'))
         ) {
             response.writeHead(503);
