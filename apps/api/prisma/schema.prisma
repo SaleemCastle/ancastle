@@ -59,6 +59,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   memberships OrganizationMembership[]
+  authSessions AuthSession[]
 
   @@map("users")
 }
@@ -80,4 +81,21 @@ model OrganizationMembership {
   @@index([organizationId, isActive])
   @@index([organizationId, role])
   @@map("organization_memberships")
+}
+
+model AuthSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  refreshTokenHash String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
 }

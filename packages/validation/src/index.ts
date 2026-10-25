@@ -12,3 +12,4 @@ export const healthStatusSchema = z.object({
 
 export type HealthStatusInput = z.input<typeof healthStatusSchema>;
 export type HealthStatusOutput = z.output<typeof healthStatusSchema>;
+export * from './auth.js';
