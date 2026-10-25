@@ -223,4 +223,16 @@ describe('Redis web sessions', () => {
             message: 'Authentication is temporarily unavailable',
         });
     });
+    it('uses coordinated refresh for server-only resource callbacks without returning token records', async () => {
+        const id = await login();
+        const execute = vi
+            .fn<(token: string) => Promise<{ data: string[] }>>()
+            .mockResolvedValue({ data: ['safe-resource'] });
+        execute.mockRejectedValueOnce(new AuthenticationRejectedError());
+        expect(await sessions.withAccessToken(id, execute)).toEqual({ data: ['safe-resource'] });
+        expect(execute).toHaveBeenNthCalledWith(1, 'test-access');
+        expect(execute).toHaveBeenNthCalledWith(2, 'rotated-access');
+        expect(backend.refresh).toHaveBeenCalledTimes(1);
+        expect(await sessions.withAccessToken('invalid', execute)).toBeNull();
+    });
 });

@@ -1,3 +1,4 @@
+import { ApplicationModule } from './modules/application/application.module.js';
 import { Module } from '@nestjs/common';
 import { HealthModule } from './modules/health/health.module.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -15,6 +16,7 @@ import { UsersModule } from './modules/users/users.module.js';
 @Module({
   imports: [
     HealthModule,
+    ApplicationModule,
     DatabaseModule,
     RedisModule,
     LoggerModule.forRoot(createLoggerConfig()),

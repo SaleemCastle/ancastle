@@ -224,6 +224,7 @@ test('logs out, revokes the API refresh session, and rejects replay of the old c
 }) => {
     await signIn(page, account);
     const current = await session(context);
+    await page.locator('summary').filter({ hasText: 'User menu' }).click();
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(page).toHaveURL(/\/login$/);
     expect((await context.cookies()).some((cookie) => cookie.name === cookieName)).toBe(false);
