@@ -13,3 +13,4 @@ export interface HealthStatus {
 export * from './api.js';
 export * from './auth.js';
 export * from './organization-farm.js';
+export * from './organization-member.js';

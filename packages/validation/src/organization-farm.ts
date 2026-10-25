@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationQuerySchema, activeStatusQuerySchema } from './pagination.js';
 
 const displayName = z.string().trim().min(1).max(120);
 const farmCode = z
@@ -27,14 +28,9 @@ export const updateFarmSchema = z
     .strict()
     .refine((value) => Object.keys(value).length > 0, 'Provide at least one field');
 
-export const farmListQuerySchema = z
-    .object({
-        page: z.coerce.number().int().min(1).max(1_000_000).default(1),
-        pageSize: z.coerce.number().int().min(1).max(100).default(20),
-        isActive: z
-            .enum(['true', 'false'])
-            .transform((value) => value === 'true')
-            .optional(),
+export const farmListQuerySchema = paginationQuerySchema
+    .extend({
+        isActive: activeStatusQuerySchema.optional(),
     })
     .strict();
 
