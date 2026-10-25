@@ -5,6 +5,7 @@ import { RedisModule } from './infrastructure/redis/redis.module.js';
 import { LoggerModule } from 'nestjs-pino';
 import { createLoggerConfig } from './config/logger.config.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { AuthorizationModule } from './modules/authorization/authorization.module.js';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuthModule } from './modules/auth/auth.module.js';
     RedisModule,
     LoggerModule.forRoot(createLoggerConfig()),
     AuthModule,
+    AuthorizationModule,
   ],
 })
 export class AppModule {}
