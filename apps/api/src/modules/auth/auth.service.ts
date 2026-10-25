@@ -153,9 +153,12 @@ export class AuthService {
       throw this.invalidSession();
     }
 
-    const suppliedHash = this.tokenService.hashRefreshToken(input.refreshToken);
-
-    if (suppliedHash !== session.refreshTokenHash) {
+    if (
+      !this.tokenService.refreshTokenMatches(
+        input.refreshToken,
+        session.refreshTokenHash,
+      )
+    ) {
       throw this.invalidSession();
     }
 
@@ -175,15 +178,29 @@ export class AuthService {
       process.env.JWT_REFRESH_TTL_SECONDS ?? 604800,
     );
 
-    await this.prisma.authSession.update({
+    // Exactly one request may consume the current hash. Recheck lifecycle at
+    // replacement so a concurrent logout/deactivation cannot revive a session.
+    const replaced = await this.prisma.authSession.updateMany({
       where: {
         id: session.id,
+        userId: session.userId,
+        refreshTokenHash: session.refreshTokenHash,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+        user: {
+          isActive: true,
+          memberships: {
+            some: { isActive: true, organization: { isActive: true } },
+          },
+        },
       },
       data: {
         refreshTokenHash,
         expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
       },
     });
+
+    if (replaced.count !== 1) throw this.invalidSession();
 
     return {
       accessToken,

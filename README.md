@@ -1546,6 +1546,12 @@ revocation is best effort. Expired/invalid sessions redirect to login; temporary
 upstream failures show a safe retry state without destroying valid session data.
 Authentication and organization/farm authorization remain enforced by NestJS.
 
+Each NestJS refresh token has a random JWT ID per issuance. Rotation atomically
+replaces the currently stored hash while rechecking session/user/membership
+lifecycle, so concurrent requests can redeem a token only once. Consumed tokens
+receive the existing safe session error. Previously issued signed tokens remain
+compatible and retire on their first successful rotation.
+
 `pnpm test` includes server action, API adapter and real-Redis session tests.
 For production browser tests, start PostgreSQL/Redis, generate the Prisma client,
 apply migrations, and build first:
