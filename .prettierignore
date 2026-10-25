@@ -9,3 +9,5 @@ pnpm-lock.yaml
 apps/api/src/generated
 **/AGENTS.md
 apps/web/next-env.d.ts
+apps/web/playwright-report
+apps/web/test-results
