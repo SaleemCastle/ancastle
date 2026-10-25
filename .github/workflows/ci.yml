@@ -19,7 +19,7 @@ jobs:
         timeout-minutes: 15
 
         env:
-            DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ancastle_farms_test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ancastle_farms_test
 
         services:
             postgres:
