@@ -63,14 +63,6 @@ jobs:
             - name: Type check
               run: pnpm typecheck
 
-            - name: Verify database environment
-              run: |
-                  if [ -z "$DATABASE_URL" ]; then
-                    echo "DATABASE_URL is not configured"
-                    exit 1
-                  fi
-                  echo "DATABASE_URL is configured"
-
             - name: Apply database migrations
               run: pnpm --filter @ancastle/api db:migrate:deploy
 
