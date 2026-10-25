@@ -106,19 +106,27 @@ export class WebSessions {
     }
 
     async user(id: string): Promise<AuthenticatedUser | null> {
+        return this.withAccessToken(id, (token) => this.backend.user(token));
+    }
+
+    /** Server-only adapter: tokens stay inside the supplied server callback. */
+    async withAccessToken<T>(
+        id: string,
+        execute: (token: string) => Promise<T>,
+    ): Promise<T | null> {
         let record = await this.store.read(id);
         if (!record) return null;
         if (record.accessExpiresAt <= this.now()) record = await this.refresh(id, record);
         if (!record) return null;
         try {
-            return await this.backend.user(record.accessToken);
+            return await execute(record.accessToken);
         } catch (error) {
             if (!(error instanceof AuthenticationRejectedError)) throw error;
         }
         record = await this.refresh(id, record);
         if (!record) return null;
         try {
-            return await this.backend.user(record.accessToken);
+            return await execute(record.accessToken);
         } catch (error) {
             if (!(error instanceof AuthenticationRejectedError)) throw error;
             await this.logout(id);

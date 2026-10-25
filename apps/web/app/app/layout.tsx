@@ -10,7 +10,7 @@ async function AuthenticatedLayout({ children }: { children: React.ReactNode }) 
         if (error instanceof AuthUnavailableError) return <SessionError />;
         throw error;
     }
-    return <main className="min-h-screen bg-gray-50 p-6">{children}</main>;
+    return children;
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

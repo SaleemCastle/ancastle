@@ -1564,3 +1564,44 @@ traffic. CI runs it against migrated PostgreSQL and Redis after the production
 build. It covers login errors/loading, protected routes, reload/navigation,
 parallel refresh, expired/forged/revoked sessions, inactive users, logout/replay,
 upstream recovery, CSRF and mobile/desktop layouts.
+
+---
+
+# Application Shell and Farm Context
+
+The protected dashboard uses `ApplicationShell` for navigation, current user and
+organization identity, the user menu/logout, and organization/farm selection.
+Selections are URL parameters, for example
+`/app/dashboard?organization=<uuid>&farm=<uuid>`. Organization switching clears the
+previous farm selection. A single accessible farm is selected automatically;
+multiple farms require a choice. A user with no assigned farms can still enter
+the organization workspace. Empty membership/access states have explicit messages.
+
+`GET /api/application/context?page=1&pageSize=20` discovers only the authenticated
+identity's active organizations. It returns the standard collection envelope,
+with organization `id/name/slug`, organization-specific profile/role, permissions
+from the central policy, and active accessible farm `id/name/code` choices.
+Pagination/counts include only the caller's memberships. Unknown query fields
+are validation errors; body/header ownership or role claims confer no access.
+Farm choices reuse `FarmAccessService.farmWhere`, including assignment lifecycle
+and organization-wide access policy. The response is `Cache-Control: no-store`.
+
+Future protected pages should call server-only `requireApplicationContext` with
+their awaited search parameters and render inside `ApplicationShell`. Use
+`applicationHref` for internal links that preserve the current selection.
+`useApplicationContext` exposes display context to client components inside the
+shell. These values are presentation state: resource APIs must still use the
+existing organization/farm guards and scoped database predicates. Farm operations
+must require an actual selected farm rather than treating null as all-farm access.
+
+The web helper selects only from a fresh server-fetched API response on each
+render. It rejects malformed/duplicate parameters, unknown organizations, and
+foreign/unassigned/inactive farms with one safe unavailable-workspace message.
+No roles, grants or farm selections are cached in the login session or trusted
+from local storage. Server-only API calls reuse M1-09 refresh coordination; tokens
+remain in Redis. API outages provide retry UI without granting access.
+
+M1-10 adds no schema migration. Unit, HTTP/PostgreSQL and production browser tests
+cover scoped discovery, separate roles across organizations, automatic single-farm
+selection, multiple farms, navigation/reload, client selection tampering, revoked
+grants, inactive memberships/farms, empty states and responsive layouts.

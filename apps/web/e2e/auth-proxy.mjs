@@ -2,7 +2,7 @@
 import { createServer } from 'node:http';
 
 let counters = { login: 0, refresh: 0, logout: 0 };
-let mode = { unavailable: false, loginDelay: 0 };
+let mode = { unavailable: false, loginDelay: 0, contextUnavailable: false, contextDelay: 0 };
 
 const server = createServer(async (request, response) => {
     try {
@@ -18,7 +18,12 @@ const server = createServer(async (request, response) => {
         }
         if (path === '/_fixture/reset') {
             counters = { login: 0, refresh: 0, logout: 0 };
-            mode = { unavailable: false, loginDelay: 0 };
+            mode = {
+                unavailable: false,
+                loginDelay: 0,
+                contextUnavailable: false,
+                contextDelay: 0,
+            };
             response.end('ok');
             return;
         }
@@ -29,7 +34,7 @@ const server = createServer(async (request, response) => {
             response.end('ok');
             return;
         }
-        if (!path.startsWith('/api/auth/')) {
+        if (!path.startsWith('/api/auth/') && !path.startsWith('/api/application/context')) {
             response.writeHead(404);
             response.end();
             return;
@@ -37,7 +42,12 @@ const server = createServer(async (request, response) => {
         const operation = path.split('/').at(-1);
         if (operation === 'login' || operation === 'refresh' || operation === 'logout')
             counters[operation]++;
-        if (mode.unavailable) {
+        if (path.startsWith('/api/application/context') && mode.contextDelay)
+            await new Promise((resolve) => setTimeout(resolve, mode.contextDelay));
+        if (
+            mode.unavailable ||
+            (mode.contextUnavailable && path.startsWith('/api/application/context'))
+        ) {
             response.writeHead(503);
             response.end('private upstream error');
             return;
