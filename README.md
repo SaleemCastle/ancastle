@@ -1678,3 +1678,46 @@ Tests cover bootstrap/login, credential non-disclosure, shared-identity profile
 isolation, grant replacement, membership lifecycle, read-only roles, foreign target
 and grant injection, stale/inactive access, last-administrator errors, validation,
 pagination, filtering and responsive layouts. No persistence changes are required.
+
+---
+
+# M1 Milestone Security Integration Suite
+
+`apps/api/src/modules/security/m1-security.integration.spec.ts` composes the real
+NestJS authentication, authorization, organization, farm, user and access-discovery
+modules through HTTP against PostgreSQL. It uses real password verification and
+login-issued tokens, unique tenant/user fixtures, and cleanup limited to those
+fixtures. An operational probe exists only in the test module to exercise the
+production farm guard/context/scoping primitives; it adds no production endpoint.
+
+Coverage includes the login-to-administration workflow, unauthenticated endpoints,
+malformed/expired/wrong-type/wrong-signature tokens, sanitized login failures,
+already-issued tokens with inactive lifecycle states, organization-specific roles,
+cross-organization reads/writes and farm grants, payload/header spoofing, assigned
+operational farm selection, record isolation by both ownership columns, safe DTOs,
+hashed refresh persistence, same-second rotation/replay/logout and concurrent
+single-use refresh redemption.
+
+Run migrations against the intended test database before the suite:
+
+```bash
+pnpm --filter @ancastle/api db:generate
+pnpm --filter @ancastle/api db:migrate:deploy
+pnpm --filter @ancastle/api exec vitest run src/modules/security/m1-security.integration.spec.ts
+```
+
+Root `pnpm test` and CI include this suite automatically. Run the root API tests
+and browser tests sequentially, as CI does, when they share PostgreSQL; overlapping
+independent suites can exhaust bounded serializable-transaction retries.
+
+Negative controls were executed with the production code restored afterward:
+removing the organization predicate from `OrganizationContext.scope` made the
+foreign-user read return 200 instead of 404, and removing the farm predicate from
+`FarmContext.scope` made an adjacent farm's record return 200 instead of 404.
+The corresponding milestone assertions failed for those exact leaks and all
+16 scenarios passed with the original constraints restored. Production context
+and guard implementations are unchanged by this card.
+
+The suite also exposed same-second and concurrent refresh-rotation regressions.
+Those were corrected separately in M1-03 PR #26, preserving the existing JWT and
+hashed server-session architecture; their milestone assertions remain intact.
