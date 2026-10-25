@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { AccessTokenPayload, RefreshTokenPayload } from './auth.types.js';
@@ -36,6 +36,7 @@ export class TokenService {
     return this.jwtService.signAsync(payload, {
       secret: process.env.JWT_REFRESH_SECRET,
       expiresIn: Number(process.env.JWT_REFRESH_TTL_SECONDS ?? 604800),
+      jwtid: randomUUID(),
     });
   }
 
