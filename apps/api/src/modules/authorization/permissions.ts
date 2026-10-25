@@ -3,6 +3,7 @@ export const Permission = {
   ORGANIZATION_UPDATE: 'organization:update',
 
   FARM_READ: 'farm:read',
+  FARM_ACCESS_ALL: 'farm:access-all',
   FARM_CREATE: 'farm:create',
   FARM_UPDATE: 'farm:update',
 

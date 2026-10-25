@@ -37,6 +37,9 @@ model Farm {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
+  accessAssignments FarmAccessAssignment[]
+
+  @@unique([organizationId, id])
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([organizationId, isActive])
@@ -58,7 +61,7 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships OrganizationMembership[]
+  memberships  OrganizationMembership[]
   authSessions AuthSession[]
 
   @@map("users")
@@ -76,6 +79,9 @@ model OrganizationMembership {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
 
+  farmAccessAssignments FarmAccessAssignment[]
+
+  @@unique([organizationId, id])
   @@unique([organizationId, userId])
   @@index([userId])
   @@index([organizationId, isActive])
@@ -98,4 +104,22 @@ model AuthSession {
   @@index([userId, revokedAt])
   @@index([expiresAt])
   @@map("auth_sessions")
+}
+
+model FarmAccessAssignment {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  membershipId   String   @db.Uuid
+  farmId         String   @db.Uuid
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  membership OrganizationMembership @relation(fields: [organizationId, membershipId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  farm       Farm                   @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([membershipId, farmId])
+  @@index([organizationId, membershipId, isActive])
+  @@index([organizationId, farmId])
+  @@map("farm_access_assignments")
 }

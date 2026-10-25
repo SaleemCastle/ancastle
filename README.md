@@ -1270,3 +1270,83 @@ It uses isolated UUID fixtures and test-only HTTP controllers, real JWT verifica
 the production guards/decorator/scoping helper, and real Prisma queries. It checks
 read/write boundaries, role separation across memberships, spoofed payloads, inactive
 states, indistinguishable failures, and concurrent organization requests.
+
+---
+
+# Farm Access Assignments and Context
+
+Farm access belongs to an organization membership, not globally to a user.
+`FarmAccessAssignment` stores a UUID, organization, membership, farm, active state,
+and creation/update timestamps. A membership can have multiple farm assignments;
+a farm can have assignments for multiple memberships. The membership/farm pair is
+unique. Revoke/reactivate using `isActive`, retaining the same assignment identity.
+
+Composite foreign keys link both membership and farm through `organizationId`.
+PostgreSQL rejects cross-organization assignments, nonexistent references, and
+reparenting an assigned farm/membership into another organization. The composite
+unique indexes on the parents support those foreign keys. Deletion is restricted
+while assignments reference the parent records.
+
+The central policy grants `farm:access-all` (`Permission.FARM_ACCESS_ALL`) to
+OWNER and ADMIN memberships. They can select all active farms in their organization
+without creating duplicate per-farm assignments. MANAGER and STAFF memberships
+require an active assignment for each selected farm. Farm access does not grant
+write permissions; the existing permission guard still evaluates every declared
+action. A role in one organization never grants farm access in another.
+
+`FarmAccessService.farmWhere(context)` returns a Prisma predicate for accessible,
+active Farm records. It constrains organization ownership and current membership,
+role and lifecycle state, and includes an active assignment restriction unless
+the verified membership has organization-wide farm access. Use it for farm
+selectors and operational farm lists. No assignments yields an empty list while
+organization-level operations remain available. `resolve(context, selectedFarmId)`
+validates a UUID selection with that predicate and returns an immutable
+`FarmContext`.
+
+Use the existing module and guards in this order:
+
+```ts
+@UseGuards(AuthGuard, AuthorizationGuard, FarmAccessGuard)
+@OrganizationParam()
+@FarmParam() // defaults to the farmId route parameter
+@RequirePermissions(Permission.FARM_READ)
+@Controller('organizations/:organizationId/farms/:farmId/example')
+export class FarmExampleController {
+    @Get()
+    read(
+        @CurrentOrganization() organization: OrganizationContext,
+        @CurrentFarm() farm: FarmContext,
+    ) {
+        return this.service.read(organization, farm);
+    }
+}
+```
+
+Import `AuthModule` and `AuthorizationModule`; the latter exports both farm
+access providers. `@FarmParam('selectedFarm')` supports a custom route parameter
+on a controller or method. `@CurrentFarm()` fails closed when verified farm
+context is absent. `FarmAccessGuard` also rejects missing/mismatched authenticated
+identity and organization context. Never construct either context from a payload
+or cache it across requests.
+
+For operational records with both ownership columns, use
+`farm.scope({ id: resourceId })`. It combines filters with verified
+`organizationId` and `farmId` using AND. For a Farm record itself, constrain its
+primary `id` to `farm.farmId` and its `organizationId` to
+`farm.organizationId`. Explicitly select allowed fields for writes and derive
+ownership from context; neither assignment authorization nor a scoped predicate
+makes arbitrary persistence data safe.
+
+Missing/malformed, nonexistent, foreign, unassigned and inactive farm selections
+all return the same sanitized `403 FORBIDDEN`. Inactive assignments, memberships,
+users and organizations cannot establish operational farm context. Authentication
+failures retain the existing `401` behavior. Body, query and header IDs/roles never
+select or authorize a farm. Selecting an inactive farm is denied even to an
+administrator; administrative lifecycle management is a separate organization-level
+operation under its own permissions.
+
+M1-06 adds reusable persistence and authorization behavior. Production management
+endpoints belong to M1-07 and assignment administration to M1-08. Its test-only HTTP
+controllers exercise the production module, guards, decorators, access predicates
+and PostgreSQL constraints. The migration was verified against both the existing
+development database and a fresh temporary database, including a zero-drift check.

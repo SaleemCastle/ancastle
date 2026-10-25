@@ -15,6 +15,7 @@ export const rolePermissions: Record<
     Permission.ORGANIZATION_UPDATE,
 
     Permission.FARM_READ,
+    Permission.FARM_ACCESS_ALL,
     Permission.FARM_CREATE,
     Permission.FARM_UPDATE,
 
