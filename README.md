@@ -246,7 +246,7 @@ From the repository root:
 pnpm dev
 ```
 
-Turborepo starts the applicable workspace development processes.
+Turborepo builds the shared ESM packages before starting the application processes and shared-package watchers.
 
 The development environment consists of:
 
@@ -285,7 +285,7 @@ pnpm --filter @ancastle/api dev
 pnpm --filter @ancastle/web dev
 ```
 
-Running applications individually can be useful when working exclusively on the frontend or backend.
+Build shared packages first with `pnpm exec turbo run build --filter=@ancastle/types --filter=@ancastle/validation` when running an application directly. Root `pnpm dev`, `pnpm test` and `pnpm build` handle this dependency automatically.
 
 ---
 
@@ -1510,3 +1510,57 @@ strict validation, foreign targets, inactive states, atomic rollback,
 non-destructive grants, bounded transaction retries, and concurrent last-admin
 and farm-replacement requests. The display-name migration was applied to the
 existing database and verified with all migrations on a fresh temporary database.
+
+---
+
+# Frontend Authentication
+
+Open `/login` to sign in through the existing NestJS authentication API. Successful
+login enters `/app/dashboard`; `/app` and the legacy `/dashboard` route lead there
+as well. Every protected page must call the server-only `requireUser()` helper
+before loading private data, even when the containing layout checks the session.
+The helper checks the existing API identity endpoint on each server render; its
+React cache only deduplicates work within that render.
+
+The browser receives a random opaque HttpOnly, SameSite=Lax, host-only cookie.
+HTTPS deployments use a Secure `__Host-ancastle-session` cookie. Redis holds the
+API access/refresh tokens under a SHA-256 hash of that handle, with an absolute
+expiration capped at seven days. API tokens are never returned in client props,
+action results, HTML, local storage or session storage. Protect Redis as a secret
+store using private networking, authentication and TLS where applicable.
+
+Configure `WEB_APP_URL` to the public web origin (HTTPS in production),
+`API_INTERNAL_URL` to the server-reachable API base ending in `/api`, and
+`REDIS_URL` for the web server. `WEB_SESSION_TTL_SECONDS` defaults to 604800 and
+must be between 1 and 604800; keep it at or below the API refresh-session lifetime.
+The web server reads only its listed settings from the root `.env` for local
+development. These values are server settings, never `NEXT_PUBLIC_*` variables.
+Use the same public origin when opening the app; actions verify that origin in
+addition to Next.js Server Action CSRF protection.
+
+Refreshes use a Redis lease and version-checked writes across web processes.
+Logout atomically removes the browser-session mapping before requesting API
+refresh-session revocation, so concurrent refresh cannot recreate it. If the API
+is unavailable during logout, the removed web session stays unusable and backend
+revocation is best effort. Expired/invalid sessions redirect to login; temporary
+upstream failures show a safe retry state without destroying valid session data.
+Authentication and organization/farm authorization remain enforced by NestJS.
+
+`pnpm test` includes server action, API adapter and real-Redis session tests.
+For production browser tests, start PostgreSQL/Redis, generate the Prisma client,
+apply migrations, and build first:
+
+```bash
+pnpm --filter @ancastle/api db:generate
+pnpm --filter @ancastle/api db:migrate:deploy
+pnpm build
+pnpm --filter @ancastle/web exec playwright install chromium
+pnpm --filter @ancastle/web test:e2e
+```
+
+The browser suite starts isolated web/API test servers on ports 3310, 4310 and 4311. It uses unique database accounts and a run-specific Redis prefix, removes
+its own fixtures, and disables trace/video/screenshot artifacts containing login
+traffic. CI runs it against migrated PostgreSQL and Redis after the production
+build. It covers login errors/loading, protected routes, reload/navigation,
+parallel refresh, expired/forged/revoked sessions, inactive users, logout/replay,
+upstream recovery, CSRF and mobile/desktop layouts.

@@ -2,6 +2,7 @@
     "$schema": "https://turbo.build/schema.json",
     "tasks": {
         "dev": {
+            "dependsOn": ["^build"],
             "cache": false,
             "persistent": true
         },
@@ -16,9 +17,9 @@
             "dependsOn": ["^typecheck"]
         },
         "test": {
-            "env": ["DATABASE_URL"],
+            "env": ["DATABASE_URL", "REDIS_URL"],
             "outputs": ["coverage/**"],
-            "dependsOn": ["^test"]
+            "dependsOn": ["^build", "^test"]
         }
     }
 }

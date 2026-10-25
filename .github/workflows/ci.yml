@@ -20,6 +20,7 @@ jobs:
 
         env:
             DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ancastle_farms_test
+            REDIS_URL: redis://localhost:6379
 
         services:
             postgres:
@@ -34,6 +35,16 @@ jobs:
                     --health-cmd "pg_isready -U postgres -d ancastle_farms_test"
                     --health-interval 10s
                     --health-timeout 5s
+                    --health-retries 5
+
+            redis:
+                image: redis:8-alpine
+                ports:
+                    - 6379:6379
+                options: >-
+                    --health-cmd "redis-cli ping"
+                    --health-interval 5s
+                    --health-timeout 3s
                     --health-retries 5
 
         steps:
@@ -74,3 +85,9 @@ jobs:
 
             - name: Check formatting
               run: pnpm format:check
+
+            - name: Install Chromium for browser tests
+              run: pnpm --filter @ancastle/web exec playwright install --with-deps chromium
+
+            - name: Browser authentication tests
+              run: pnpm --filter @ancastle/web test:e2e
