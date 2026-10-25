@@ -27,6 +27,14 @@ describe('UsersService transaction retries', () => {
       clientVersion: 'test',
     });
 
+  const adapterConflict = () => {
+    const error = new Error('TransactionWriteConflict', {
+      cause: { kind: 'TransactionWriteConflict' },
+    });
+    error.name = 'DriverAdapterError';
+    return error;
+  };
+
   beforeEach(() => {
     vi.resetAllMocks();
     updateMany.mockResolvedValue({ count: 1 });
@@ -44,30 +52,36 @@ describe('UsersService transaction retries', () => {
     });
   });
 
-  it('retries transient conflicts and completes once a transaction succeeds', async () => {
-    transaction
-      .mockRejectedValueOnce(conflict())
-      .mockRejectedValueOnce(conflict())
-      .mockImplementation((operation: (tx: unknown) => unknown) =>
-        operation({ organizationMembership: { findFirst, updateMany } }),
-      );
-    await expect(
-      service.updateProfile(context, 'target', { displayName: 'Updated' }),
-    ).resolves.toMatchObject({ displayName: 'Updated' });
-    expect(transaction).toHaveBeenCalledTimes(3);
-    expect(updateMany).toHaveBeenCalledTimes(1);
-  });
+  it.each([conflict, adapterConflict])(
+    'retries transient conflicts and completes once a transaction succeeds (%#)',
+    async (failure) => {
+      transaction
+        .mockRejectedValueOnce(failure())
+        .mockRejectedValueOnce(failure())
+        .mockImplementation((operation: (tx: unknown) => unknown) =>
+          operation({ organizationMembership: { findFirst, updateMany } }),
+        );
+      await expect(
+        service.updateProfile(context, 'target', { displayName: 'Updated' }),
+      ).resolves.toMatchObject({ displayName: 'Updated' });
+      expect(transaction).toHaveBeenCalledTimes(3);
+      expect(updateMany).toHaveBeenCalledTimes(1);
+    },
+  );
 
-  it('bounds retries and returns a safe stable concurrency error', async () => {
-    transaction.mockRejectedValue(conflict());
-    await expect(
-      service.updateProfile(context, 'target', { displayName: 'Updated' }),
-    ).rejects.toMatchObject({
-      code: 'CONCURRENT_UPDATE',
-      message: 'The data changed during this request; please retry',
-    });
-    expect(transaction).toHaveBeenCalledTimes(3);
-  });
+  it.each([conflict, adapterConflict])(
+    'bounds retries and returns a safe stable concurrency error (%#)',
+    async (failure) => {
+      transaction.mockRejectedValue(failure());
+      await expect(
+        service.updateProfile(context, 'target', { displayName: 'Updated' }),
+      ).rejects.toMatchObject({
+        code: 'CONCURRENT_UPDATE',
+        message: 'The data changed during this request; please retry',
+      });
+      expect(transaction).toHaveBeenCalledTimes(3);
+    },
+  );
 
   it('does not retry unrelated persistence errors', async () => {
     const failure = new Error('Database unavailable');
@@ -82,4 +96,28 @@ describe('UsersService transaction retries', () => {
       new Set(Object.values(MembershipRole)),
     );
   });
+  it.each([
+    new Error('TransactionWriteConflict'),
+    Object.assign(
+      new Error('private adapter failure', {
+        cause: { kind: 'ConnectionClosed' },
+      }),
+      { name: 'DriverAdapterError' },
+    ),
+    new Error('unrelated failure', {
+      cause: { kind: 'TransactionWriteConflict' },
+    }),
+    Object.assign(new Error('private adapter failure'), {
+      name: 'DriverAdapterError',
+    }),
+  ])(
+    'does not retry unrelated or message-only adapter failures (%#)',
+    async (failure) => {
+      transaction.mockRejectedValue(failure);
+      await expect(
+        service.updateProfile(context, 'target', { displayName: 'Updated' }),
+      ).rejects.toBe(failure);
+      expect(transaction).toHaveBeenCalledTimes(1);
+    },
+  );
 });
