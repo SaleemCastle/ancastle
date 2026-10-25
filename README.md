@@ -112,6 +112,12 @@ git --version
 
 ---
 
+## M1 Identity, Access and Administration
+
+Follow the [M1 developer workflow](docs/m1-workflow.md) for fresh migrations,
+first-owner provisioning, session behavior, permissions, tenant/farm scoping and
+end-to-end validation. The default seed creates organization/farm data only.
+
 ## Getting Started
 
 ### 1. Clone the Repository
