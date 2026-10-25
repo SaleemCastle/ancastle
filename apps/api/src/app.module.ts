@@ -4,6 +4,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { RedisModule } from './infrastructure/redis/redis.module.js';
 import { LoggerModule } from 'nestjs-pino';
 import { createLoggerConfig } from './config/logger.config.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { createLoggerConfig } from './config/logger.config.js';
     DatabaseModule,
     RedisModule,
     LoggerModule.forRoot(createLoggerConfig()),
+    AuthModule,
   ],
 })
 export class AppModule {}

@@ -34,6 +34,10 @@ export const envSchema = z.object({
     .string()
     .min(32, 'JWT_REFRESH_SECRET must contain at least 32 characters'),
 
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+
+  JWT_REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(604800),
+
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
