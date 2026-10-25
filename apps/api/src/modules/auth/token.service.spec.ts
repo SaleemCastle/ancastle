@@ -70,4 +70,21 @@ describe('TokenService', () => {
       type: 'access',
     });
   });
+  it('issues distinct refresh tokens for the same session in the same second', async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const [first, second] = await Promise.all([
+        service.createRefreshToken('user-id', 'session-id'),
+        service.createRefreshToken('user-id', 'session-id'),
+      ]);
+      expect(first === second).toBe(false);
+      const payload = await jwtService.verifyAsync(first, {
+        secret: process.env.JWT_REFRESH_SECRET,
+      });
+      expect(payload.jti).toMatch(/^[a-f0-9-]{36}$/);
+    } finally {
+      clock.mockRestore();
+    }
+  });
 });
