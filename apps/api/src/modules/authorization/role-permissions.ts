@@ -1,0 +1,40 @@
+import { MembershipRole } from '../../generated/prisma/client.js';
+import {
+  Permission,
+  type Permission as PermissionType,
+} from './permissions.js';
+
+export const rolePermissions: Record<
+  MembershipRole,
+  readonly PermissionType[]
+> = {
+  [MembershipRole.OWNER]: Object.values(Permission),
+
+  [MembershipRole.ADMIN]: [
+    Permission.ORGANIZATION_READ,
+    Permission.ORGANIZATION_UPDATE,
+
+    Permission.FARM_READ,
+    Permission.FARM_CREATE,
+    Permission.FARM_UPDATE,
+
+    Permission.USER_READ,
+    Permission.USER_CREATE,
+    Permission.USER_UPDATE,
+    Permission.USER_DEACTIVATE,
+
+    Permission.MEMBERSHIP_READ,
+    Permission.MEMBERSHIP_MANAGE,
+  ],
+
+  [MembershipRole.MANAGER]: [
+    Permission.ORGANIZATION_READ,
+
+    Permission.FARM_READ,
+
+    Permission.USER_READ,
+    Permission.MEMBERSHIP_READ,
+  ],
+
+  [MembershipRole.STAFF]: [Permission.ORGANIZATION_READ, Permission.FARM_READ],
+};
