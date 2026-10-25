@@ -1636,3 +1636,39 @@ The browser suite covers organization updates, complete farm lifecycle, validati
 and duplicate codes, read-only access, cross-organization read/write attempts,
 tampered IDs, stale permissions, pagination/filtering, outages/retry/pending states,
 and mobile/desktop layouts. Existing API security tests remain unchanged.
+
+---
+
+# Organization User and Access Administration UI
+
+**Organization users** opens `/app/users`; create and detail routes are
+`/app/users/new` and `/app/users/<uuid>`, with the selected organization in the URL.
+Lists paginate and filter membership status through the existing M1-08 API.
+Read permission controls navigation and data access. Profile, role, farm-assignment
+and lifecycle forms each require their corresponding fresh permissions.
+
+The UI follows the approved membership-only boundary. Existing global email and
+account status are read-only. Profile editing changes only the organization-specific
+display name, including clearing it. Membership deactivation affects only that
+organization; reactivating it does not activate a globally inactive identity.
+
+Creation uses the existing new-identity bootstrap API, with email, an initial
+12–128 character password, organization display name, role and explicit farm grants.
+The password input is masked and never populated from persisted identity data.
+Credentials never enter action results or view models. Credential delivery remains
+outside this application workflow; existing identities require the separate
+identity-enrollment workflow described in the API documentation.
+
+Farm assignments support multiple, one or zero explicit grants and include inactive
+farms with a visible status. Inactive farms remain unavailable for operations.
+Organization-wide farm access derives from the existing permission policy, so
+explicit grants do not restrict a role that has all-farm access. Last-administrator
+and concurrency safeguards remain enforced by the backend, with safe UI messages.
+
+Server Actions revalidate origin, identity, selected organization and every required
+permission. Client user/farm IDs select targets for the guarded API to verify;
+profile/role/status/assignment writes forward only their supported contract fields.
+Tests cover bootstrap/login, credential non-disclosure, shared-identity profile
+isolation, grant replacement, membership lifecycle, read-only roles, foreign target
+and grant injection, stale/inactive access, last-administrator errors, validation,
+pagination, filtering and responsive layouts. No persistence changes are required.

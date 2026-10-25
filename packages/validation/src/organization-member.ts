@@ -42,3 +42,27 @@ export type MemberProfileUpdateInput = z.infer<typeof memberProfileUpdateSchema>
 export type MembershipUpdateInput = z.infer<typeof membershipUpdateSchema>;
 export type MemberFarmAccessInput = z.infer<typeof memberFarmAccessSchema>;
 export type OrganizationMemberListQuery = z.infer<typeof organizationMemberListQuerySchema>;
+
+export const organizationMemberSchema = z.object({
+    membershipId: z.uuid(),
+    organizationId: z.uuid(),
+    userId: z.uuid(),
+    email: z.email(),
+    userIsActive: z.boolean(),
+    displayName: z.string().nullable(),
+    role: organizationRoleSchema,
+    isActive: z.boolean(),
+    farmAccess: z.object({ allFarms: z.boolean(), farmIds: z.array(z.uuid()) }),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+});
+export const organizationMemberResponseSchema = z.object({ data: organizationMemberSchema });
+export const organizationMemberListResponseSchema = z.object({
+    data: z.array(organizationMemberSchema),
+    meta: z.object({
+        page: z.number().int().positive(),
+        pageSize: z.number().int().positive(),
+        totalItems: z.number().int().nonnegative(),
+        totalPages: z.number().int().nonnegative(),
+    }),
+});

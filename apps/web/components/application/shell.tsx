@@ -167,6 +167,16 @@ export function ApplicationShell({
                                     Organization settings
                                 </Link>
                             )}
+                            {current?.permissions.includes('user:read') && (
+                                <Link
+                                    prefetch={false}
+                                    aria-current={activePath === '/app/users' ? 'page' : undefined}
+                                    href={applicationHref('/app/users', current.organization.id)}
+                                    className={navigationClass('/app/users')}
+                                >
+                                    Organization users
+                                </Link>
+                            )}
                         </nav>
                     </aside>
                     <main className="min-w-0 rounded-xl border bg-background p-5 sm:p-6">

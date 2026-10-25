@@ -34,7 +34,7 @@ export function validateForm<T>(schema: z.ZodType<T>, input: unknown): T {
 
 export async function runOrganizationMutation(
     form: FormData,
-    permission: string,
+    permission: string | readonly string[],
     operation: (organizationId: string) => Promise<ManagementActionState>,
 ): Promise<ManagementActionState> {
     try {
@@ -42,7 +42,11 @@ export async function runOrganizationMutation(
             return { error: 'The request could not be verified. Please reload and try again.' };
         const organization = validateForm(resourceIdSchema, formValue(form, 'organization'));
         const context = await requireApplicationContext({ organization });
-        if (!context.current?.permissions.includes(permission))
+        const required = typeof permission === 'string' ? [permission] : permission;
+        if (
+            !context.current ||
+            !required.every((value) => context.current!.permissions.includes(value))
+        )
             throw new ManagementApiError('FORBIDDEN');
         const result = await operation(context.current.organization.id);
         revalidatePath('/app', 'layout');

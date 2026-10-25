@@ -7,6 +7,11 @@ import { AuthenticationRejectedError, AuthUnavailableError } from '../auth/error
 import { webSessions } from '../auth/sessions';
 
 const messages: Record<string, string> = {
+    ORGANIZATION_USER_NOT_FOUND: 'This resource is unavailable.',
+    USER_CREATION_CONFLICT: 'User creation could not be completed.',
+    INVALID_FARM_ACCESS: 'Selected farms are unavailable in this organization.',
+    LAST_ADMINISTRATOR: 'At least one active administrator must remain in the organization.',
+    CONCURRENT_UPDATE: 'The data changed during this request; please reload and try again.',
     FORBIDDEN: 'You do not have permission to perform this action.',
     FARM_NOT_FOUND: 'This resource is unavailable.',
     ORGANIZATION_NOT_FOUND: 'This resource is unavailable.',
