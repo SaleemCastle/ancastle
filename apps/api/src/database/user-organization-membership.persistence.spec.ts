@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { MembershipRole, PrismaClient } from '../generated/prisma/client.js';
 
+const connectionString = process.env.DATABASE_URL;
+
 describe('User and organization membership persistence', () => {
   let prisma: PrismaClient;
   let prismaConnected = false;
@@ -12,7 +14,6 @@ describe('User and organization membership persistence', () => {
   const userEmail = `membership-${testId}@example.com`;
 
   beforeAll(async () => {
-    const connectionString = process.env.DATABASE_URL;
 
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is not defined');

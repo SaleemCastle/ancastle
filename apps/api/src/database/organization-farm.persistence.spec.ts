@@ -2,6 +2,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client.js';
 import { randomUUID } from 'node:crypto';
 
+const connectionString = process.env.DATABASE_URL;
+
 describe('Organization and Farm persistence', () => {
   let prisma: PrismaClient;
   let prismaConnected = false;
@@ -9,7 +11,6 @@ describe('Organization and Farm persistence', () => {
   const organizationSlug = `test-org-${randomUUID()}`;
 
   beforeAll(async () => {
-    const connectionString = process.env.DATABASE_URL;
 
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is not defined');
