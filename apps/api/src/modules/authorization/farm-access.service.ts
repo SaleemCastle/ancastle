@@ -18,9 +18,16 @@ export class FarmAccessService {
   ) {}
 
   /** Requires the fresh OrganizationContext verified by AuthorizationGuard. */
-  farmWhere(context: OrganizationContext): Prisma.FarmWhereInput {
+  farmWhere(
+    context: OrganizationContext,
+    options: { includeInactive?: boolean } = {},
+  ): Prisma.FarmWhereInput {
     const where: Prisma.FarmWhereInput = {
-      isActive: true,
+      isActive:
+        options.includeInactive &&
+        this.authorization.hasPermission(context.role, Permission.FARM_UPDATE)
+          ? undefined
+          : true,
       organization: {
         isActive: true,
         organizationMemberships: {

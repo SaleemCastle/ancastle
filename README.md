@@ -1350,3 +1350,71 @@ endpoints belong to M1-07 and assignment administration to M1-08. Its test-only 
 controllers exercise the production module, guards, decorators, access predicates
 and PostgreSQL constraints. The migration was verified against both the existing
 development database and a fresh temporary database, including a zero-drift check.
+
+---
+
+# Organization and Farm Management API
+
+The selected organization is represented in the route and verified against the
+authenticated user's active membership before any operation. All endpoints require
+a bearer access token and return the standard resource or paginated collection envelope.
+
+| Method | Route                                              | Required permission   | Input                                             |
+| ------ | -------------------------------------------------- | --------------------- | ------------------------------------------------- |
+| GET    | `/api/organizations/:organizationId`               | `organization:read`   | —                                                 |
+| PATCH  | `/api/organizations/:organizationId`               | `organization:update` | `{ name }`                                        |
+| GET    | `/api/organizations/:organizationId/farms`         | `farm:read`           | Query: `page`, `pageSize`, `isActive`             |
+| POST   | `/api/organizations/:organizationId/farms`         | `farm:create`         | `{ name, code }`                                  |
+| GET    | `/api/organizations/:organizationId/farms/:farmId` | `farm:read`           | —                                                 |
+| PATCH  | `/api/organizations/:organizationId/farms/:farmId` | `farm:update`         | Any nonempty subset of `{ name, code, isActive }` |
+
+Organization profile updates support the name. Organization IDs, slugs, and lifecycle
+state are read-only through these endpoints. Farm lifecycle uses
+`PATCH { "isActive": false }` and `PATCH { "isActive": true }`; important records
+and their assignments are retained.
+
+Names are trimmed and must contain 1–120 characters. Farm codes are trimmed,
+converted to uppercase, limited to 32 characters, and use letters, digits,
+underscores or hyphens, beginning with a letter/digit. Codes are unique within
+an organization; the same code can be used by a different organization.
+The API derives creation ownership from verified context and selects writable
+fields explicitly. Unknown body fields, including organization/farm/user IDs,
+roles, permissions and membership IDs, are validation errors.
+
+Farm list defaults are `page=1`, `pageSize=20`; maximum page size is 100 and
+maximum page is 1,000,000. The optional `isActive` query accepts `true` or
+`false`. Lists sort by code and stable ID, and count/page queries use the same
+authorization predicate and a repeatable-read transaction. Empty lists return
+zero total pages. Out-of-range pages return an empty data array with the
+requested page and actual totals.
+
+Ordinary members see only active assigned farms. Farm-update permission allows
+administrative lists and details to include inactive accessible farms so they can
+be reactivated. This is an explicit, permission-checked option on the existing
+`FarmAccessService.farmWhere` primitive; default operational context resolution
+continues to reject inactive farms. Administrative status access does not bypass
+organization ownership, membership lifecycle/role checks, or assignment policy.
+Farm selectors should request `isActive=true`.
+
+Shared Zod schemas and inferred request types live in
+`packages/validation/src/organization-farm.ts`; response contracts live in
+`packages/types/src/organization-farm.ts`. Resource timestamps are ISO strings.
+Organization profiles expose only `id`, `name`, `slug`, `isActive`,
+`createdAt` and `updatedAt`. Farm responses expose only `id`,
+`organizationId`, `name`, `code`, `isActive`, `createdAt` and `updatedAt`.
+
+Invalid input returns `400 VALIDATION_ERROR` with field details. Duplicate farm
+codes on create/update return `409 FARM_CODE_EXISTS`, including concurrent
+creation races. Within a valid organization scope, foreign, nonexistent and
+inaccessible farm details/updates return the same `404 FARM_NOT_FOUND` response.
+Organization membership/permission failures remain sanitized `403 FORBIDDEN`;
+authentication failures remain `401`. Resource lookups and atomic writes include
+tenant/access predicates, and persistence models or database error details are
+never returned directly.
+
+The management integration suite runs under `pnpm test` against migrated
+PostgreSQL using the production modules/controllers/services/guards and shared
+validation. It covers CRUD/lifecycle, access-scoped pagination and counts,
+cross-organization read/write attempts, role separation, inactive states,
+unknown ownership fields, malformed input, duplicate races and response fields.
+M1-07 requires no schema change or migration.
