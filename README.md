@@ -1418,3 +1418,95 @@ validation. It covers CRUD/lifecycle, access-scoped pagination and counts,
 cross-organization read/write attempts, role separation, inactive states,
 unknown ownership fields, malformed input, duplicate races and response fields.
 M1-07 requires no schema change or migration.
+
+---
+
+# Organization User Administration API
+
+M1-08 follows the approved identity boundary: organization administrators manage
+organization memberships and organization-specific profiles. Existing identities'
+global email, password and `User.isActive` are read-only in these endpoints.
+Membership `isActive` controls access to that organization only. Deactivating a
+membership does not revoke the user's other memberships or global sessions;
+the existing guards revalidate organization access on subsequent requests.
+
+`OrganizationMembership.displayName` is a nullable organization-specific profile
+field, so the same person can have different names in different organizations.
+Existing memberships migrate with a null display name. The identity record stays
+shared across organizations.
+
+| Method | Route under `/api/organizations/:organizationId` | Permission                                                         |
+| ------ | ------------------------------------------------ | ------------------------------------------------------------------ |
+| GET    | `/users`                                         | `user:read`                                                        |
+| POST   | `/users`                                         | `user:create` and `membership:manage`                              |
+| GET    | `/users/:userId`                                 | `user:read`                                                        |
+| PATCH  | `/users/:userId/profile`                         | `user:update`                                                      |
+| PATCH  | `/users/:userId/membership`                      | `membership:manage`; status changes also require `user:deactivate` |
+| PUT    | `/users/:userId/farm-access`                     | `membership:manage`                                                |
+
+User IDs in routes select a membership within the verified organization. Foreign
+and nonexistent targets share `404 ORGANIZATION_USER_NOT_FOUND`. No unscoped
+identity lookup is used to establish access to an administration target. The
+central role policy determines permissions; MANAGER can read organization users
+but cannot administer them, and STAFF cannot access the user administration API.
+
+The list accepts the same strict `page`, `pageSize` and optional `isActive`
+query contract as farm lists, with status referring to the membership. Pagination
+and status validation rules are shared between the two contracts. Defaults are
+page 1/size 20, maximum size 100; counts and pages use the same tenant predicate.
+
+The M1 creation workflow is administrator bootstrap of a new identity:
+`{ email, password, displayName?, role?, farmIds? }`. Email uses existing
+authentication normalization; password length is 12–128 characters. Role defaults
+to STAFF and farm IDs to an empty array. The existing PasswordService hashes the
+password using Argon2id; the existing authentication endpoints handle subsequent
+login and sessions. Identity, membership, and assignments commit atomically.
+The caller must arrange credential delivery outside this API; it sends no
+invitation email and returns no password or authentication tokens.
+
+Bootstrap does not attach or change an existing identity. Uniqueness conflicts
+return the generic `409 USER_CREATION_CONFLICT` without identity, organization
+or membership metadata. Invalid farm selections roll back the entire operation.
+Existing-user enrollment and global identity editing require a separate
+consent/identity-management workflow.
+
+Profile updates accept `{ displayName }`, trimmed to 1–120 characters or null
+to clear. Membership updates accept a nonempty subset of
+`{ role, isActive }`. Roles use the shared OWNER/ADMIN/MANAGER/STAFF contract.
+Unknown fields, including identity credentials, ownership IDs and permission
+claims, are validation errors. A globally inactive identity remains inactive
+when its organization membership is reactivated.
+
+Farm access replacement accepts `{ farmIds: [] }`, up to 1,000 unique UUIDs.
+Every farm must belong to the verified organization. Foreign and nonexistent
+selections share `400 INVALID_FARM_ACCESS`; a failed replacement leaves existing
+grants unchanged. Existing assignments are deactivated/reactivated with stable
+IDs, and missing assignments are created through bulk operations in one
+transaction. An inactive farm can retain a grant but remains unavailable to
+operational context resolution. Organization-wide farm access still derives
+from the role policy; clearing explicit grants does not remove an administrator's
+organization-wide access.
+
+Mutations revalidate the acting membership's identity, role, active user and
+active organization inside a serializable transaction. A change cannot remove
+the last active user/membership whose role has `membership:manage` in that
+organization. Inactive users/memberships and administrators in other
+organizations do not satisfy this safeguard. `409 LAST_ADMINISTRATOR` leaves
+the membership unchanged. Serialization conflicts retry at most twice, then
+return `409 CONCURRENT_UPDATE`. Concurrent demotions therefore preserve
+administrative access.
+
+Shared request schemas live in `packages/validation/src/organization-member.ts`;
+shared roles and response DTOs live in
+`packages/types/src/organization-member.ts`. Responses include membership and
+user IDs, organization ID, email, read-only `userIsActive`, display name,
+membership role/status, timestamps, and farm access
+`{ allFarms, farmIds }`. Password hashes, credentials, tokens, sessions and
+memberships in other organizations are never selected into response DTOs.
+
+The administration tests cover bootstrap/authentication, read/write permissions,
+organization-specific profiles, shared-identity lifecycle, role/farm changes,
+strict validation, foreign targets, inactive states, atomic rollback,
+non-destructive grants, bounded transaction retries, and concurrent last-admin
+and farm-replacement requests. The display-name migration was applied to the
+existing database and verified with all migrations on a fresh temporary database.

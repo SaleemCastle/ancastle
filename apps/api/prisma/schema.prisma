@@ -71,6 +71,7 @@ model OrganizationMembership {
   id             String         @id @default(uuid()) @db.Uuid
   organizationId String         @db.Uuid
   userId         String         @db.Uuid
+  displayName    String?
   role           MembershipRole @default(STAFF)
   isActive       Boolean        @default(true)
   createdAt      DateTime       @default(now())
