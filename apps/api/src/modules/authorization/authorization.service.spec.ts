@@ -61,4 +61,16 @@ describe('AuthorizationService', () => {
       ]),
     ).toBe(false);
   });
+  it.each([
+    [MembershipRole.ADMIN, true],
+    [MembershipRole.MANAGER, false],
+    [MembershipRole.STAFF, false],
+  ] as const)(
+    'organization-wide farm access for %s is %s',
+    (role, expected) => {
+      expect(service.hasPermission(role, Permission.FARM_ACCESS_ALL)).toBe(
+        expected,
+      );
+    },
+  );
 });
