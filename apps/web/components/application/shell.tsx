@@ -11,12 +11,17 @@ export function ApplicationShell({
     context,
     organizations,
     children,
+    activePath = '/app/dashboard',
 }: {
+    activePath?: string;
     context: ApplicationViewContext;
     organizations: ApplicationOrganization[];
     children: React.ReactNode;
 }) {
     const { user, current, farm } = context;
+    const navigationClass = (path: string) =>
+        'mt-1 block rounded-md px-3 py-2 text-sm ' +
+        (activePath === path ? 'bg-primary text-primary-foreground font-medium' : 'hover:bg-muted');
     return (
         <ApplicationContextProvider value={context}>
             <div className="min-h-screen bg-muted/30">
@@ -125,16 +130,43 @@ export function ApplicationShell({
                         <nav aria-label="Primary navigation">
                             <Link
                                 prefetch={false}
-                                aria-current="page"
+                                aria-current={activePath === '/app/dashboard' ? 'page' : undefined}
                                 href={applicationHref(
                                     '/app/dashboard',
                                     current?.organization.id,
                                     farm?.id,
                                 )}
-                                className="block rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+                                className={navigationClass('/app/dashboard')}
                             >
                                 Dashboard
                             </Link>
+                            {current?.permissions.includes('farm:read') && (
+                                <Link
+                                    prefetch={false}
+                                    aria-current={activePath === '/app/farms' ? 'page' : undefined}
+                                    href={applicationHref('/app/farms', current.organization.id)}
+                                    className={navigationClass('/app/farms')}
+                                >
+                                    Farms
+                                </Link>
+                            )}
+                            {current?.permissions.includes('organization:read') && (
+                                <Link
+                                    prefetch={false}
+                                    aria-current={
+                                        activePath === '/app/settings/organization'
+                                            ? 'page'
+                                            : undefined
+                                    }
+                                    href={applicationHref(
+                                        '/app/settings/organization',
+                                        current.organization.id,
+                                    )}
+                                    className={navigationClass('/app/settings/organization')}
+                                >
+                                    Organization settings
+                                </Link>
+                            )}
                         </nav>
                     </aside>
                     <main className="min-w-0 rounded-xl border bg-background p-5 sm:p-6">

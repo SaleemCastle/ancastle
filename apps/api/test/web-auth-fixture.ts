@@ -118,6 +118,14 @@ export async function createWebAuthFixture(
         data: { isActive },
       });
     },
+    async findFarm(code: string, organizationId = organization.id) {
+      if (!ownedOrganizations.includes(organizationId))
+        throw new Error('Fixture organization is not owned by this test');
+      return prisma.farm.findUnique({
+        where: { organizationId_code: { organizationId, code } },
+        select: { id: true, name: true, code: true, isActive: true },
+      });
+    },
     async deactivateUser() {
       await prisma.user.update({
         where: { id: user.id },
