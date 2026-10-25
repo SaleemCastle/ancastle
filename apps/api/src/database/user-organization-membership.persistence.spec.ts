@@ -14,7 +14,6 @@ describe('User and organization membership persistence', () => {
   const userEmail = `membership-${testId}@example.com`;
 
   beforeAll(async () => {
-
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is not defined');
     }

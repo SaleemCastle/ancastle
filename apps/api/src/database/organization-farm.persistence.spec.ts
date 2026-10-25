@@ -11,7 +11,6 @@ describe('Organization and Farm persistence', () => {
   const organizationSlug = `test-org-${randomUUID()}`;
 
   beforeAll(async () => {
-
     if (!connectionString) {
       throw new Error('DATABASE_URL environment variable is not defined');
     }
