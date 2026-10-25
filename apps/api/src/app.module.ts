@@ -7,6 +7,9 @@ import { createLoggerConfig } from './config/logger.config.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { AuthorizationModule } from './modules/authorization/authorization.module.js';
 
+import { OrganizationsModule } from './modules/organizations/organizations.module.js';
+import { FarmsModule } from './modules/farms/farms.module.js';
+
 @Module({
   imports: [
     HealthModule,
@@ -15,6 +18,8 @@ import { AuthorizationModule } from './modules/authorization/authorization.modul
     LoggerModule.forRoot(createLoggerConfig()),
     AuthModule,
     AuthorizationModule,
+    OrganizationsModule,
+    FarmsModule,
   ],
 })
 export class AppModule {}
