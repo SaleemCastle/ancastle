@@ -45,6 +45,12 @@ async function signIn(page: Page, account: { email: string; password: string }) 
     await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
 }
 
+async function expectSignedInAs(page: Page, email: string) {
+    await expect(page.getByRole('complementary').locator('summary')).toContainText(
+        email.slice(0, 20),
+    );
+}
+
 async function session(context: BrowserContext) {
     const cookie = (await context.cookies()).find((entry) => entry.name === cookieName);
     if (!cookie) throw new Error('Expected an opaque session cookie');
@@ -58,7 +64,9 @@ test('redirects unauthenticated protected and legacy routes', async ({ page }) =
     for (const path of ['/app/dashboard', '/app', '/dashboard']) {
         await page.goto(path);
         await expect(page).toHaveURL(/\/login$/);
-        await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+        await expect(
+            page.getByRole('heading', { name: 'Sign in to your workspace' }),
+        ).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toHaveCount(0);
     }
 });
@@ -84,7 +92,7 @@ test('signs in, survives navigation/reload, and keeps tokens off the browser', a
     expect(cookie.value === record.accessToken || cookie.value === record.refreshToken).toBe(false);
     expect((await page.evaluate(() => document.cookie)).includes(cookieName)).toBe(false);
     await page.reload();
-    await expect(page.getByText('Signed in as ' + account.email, { exact: true })).toBeVisible();
+    await expectSignedInAs(page, account.email);
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/app\/dashboard$/);
     const storage = await page.evaluate(() =>
@@ -163,7 +171,7 @@ test('coordinates parallel refreshes through Redis and preserves the cookie hand
     };
     expect(metrics.refresh).toBe(1);
     await page.reload();
-    await expect(page.getByText('Signed in as ' + account.email, { exact: true })).toBeVisible();
+    await expectSignedInAs(page, account.email);
 });
 
 test('rejects expired Redis sessions and forged browser handles', async ({
@@ -249,7 +257,7 @@ test('recovers from a temporary upstream outage without destroying a valid sessi
     expect(await redis.exists(current.key)).toBe(1);
     await request.post(proxy + '/_fixture/mode', { data: { unavailable: false } });
     await page.getByRole('button', { name: 'Try again', exact: true }).click();
-    await expect(page.getByText('Signed in as ' + account.email, { exact: true })).toBeVisible();
+    await expectSignedInAs(page, account.email);
 });
 
 test('rejects cross-origin action requests without mutating the session', async ({
@@ -274,7 +282,7 @@ test('rejects cross-origin action requests without mutating the session', async 
     expect(response.status()).toBeGreaterThanOrEqual(400);
     expect(await redis.exists(current.key)).toBe(1);
     await page.reload();
-    await expect(page.getByText('Signed in as ' + account.email, { exact: true })).toBeVisible();
+    await expectSignedInAs(page, account.email);
 });
 
 test('keeps the login form usable on mobile and desktop', async ({ page }) => {
