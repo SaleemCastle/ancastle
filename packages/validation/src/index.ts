@@ -1,3 +1,4 @@
+import { CUSTOMER_TYPES } from '@ancastle/types';
 import { z } from 'zod';
 
 export const healthStatusSchema = z.object({
@@ -10,8 +11,88 @@ export const healthStatusSchema = z.object({
     }),
 });
 
+const blankToUndefined = (value: unknown) => {
+    if (typeof value !== 'string') {
+        return value;
+    }
+
+    const trimmed = value.trim();
+
+    return trimmed === '' ? undefined : trimmed;
+};
+
+export const requiredNameSchema = z.string().trim().min(1).max(120);
+
+export const optionalTextSchema = (maxLength: number) =>
+    z.preprocess(blankToUndefined, z.string().max(maxLength).optional());
+
+export const optionalEmailSchema = z.preprocess(
+    blankToUndefined,
+    z.string().trim().toLowerCase().email().max(254).optional(),
+);
+
+export const optionalPhoneSchema = z.preprocess(blankToUndefined, z.string().max(30).optional());
+
+const customerFields = {
+    type: z.enum(CUSTOMER_TYPES),
+    name: requiredNameSchema,
+    contactPerson: optionalTextSchema(120),
+    phone: optionalPhoneSchema,
+    email: optionalEmailSchema,
+    address: optionalTextSchema(500),
+    notes: optionalTextSchema(2000),
+};
+
+const supplierFields = {
+    name: requiredNameSchema,
+    contactPerson: optionalTextSchema(120),
+    phone: optionalPhoneSchema,
+    email: optionalEmailSchema,
+    address: optionalTextSchema(500),
+    notes: optionalTextSchema(2000),
+};
+
+export const createCustomerSchema = z.object(customerFields).strict();
+
+export const updateCustomerSchema = z
+    .object(customerFields)
+    .partial()
+    .strict()
+    .refine((data) => Object.keys(data).length > 0, {
+        message: 'At least one field must be provided',
+    });
+
+export const createSupplierSchema = z.object(supplierFields).strict();
+
+export const updateSupplierSchema = z
+    .object(supplierFields)
+    .partial()
+    .strict()
+    .refine((data) => Object.keys(data).length > 0, {
+        message: 'At least one field must be provided',
+    });
+
+const booleanQuerySchema = z.enum(['true', 'false']).transform((value) => value === 'true');
+
+export const masterDataQuerySchema = z
+    .object({
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce.number().int().min(1).max(100).default(20),
+        search: optionalTextSchema(120),
+        isActive: booleanQuerySchema.optional(),
+    })
+    .strict();
+
 export type HealthStatusInput = z.input<typeof healthStatusSchema>;
 export type HealthStatusOutput = z.output<typeof healthStatusSchema>;
+export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+
+export type CreateSupplierInput = z.infer<typeof createSupplierSchema>;
+export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;
+
+export type MasterDataQuery = z.infer<typeof masterDataQuerySchema>;
+
 export * from './auth.js';
 export * from './organization-farm.js';
 export * from './organization-member.js';
