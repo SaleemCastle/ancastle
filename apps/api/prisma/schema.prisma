@@ -12,6 +12,11 @@ datasource db {
   provider = "postgresql"
 }
 
+enum CustomerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
 model Organization {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -22,6 +27,7 @@ model Organization {
 
   farms                   Farm[]
   organizationMemberships OrganizationMembership[]
+  customers               Customer[]
 
   @@map("organizations")
 }
@@ -123,4 +129,30 @@ model FarmAccessAssignment {
   @@index([organizationId, membershipId, isActive])
   @@index([organizationId, farmId])
   @@map("farm_access_assignments")
+}
+
+model Customer {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  code           String
+  type           CustomerType
+
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  notes         String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+  @@index([organizationId, type])
+  @@map("customers")
 }
