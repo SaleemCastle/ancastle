@@ -10,6 +10,39 @@ export interface HealthStatus {
     };
 }
 
+export const CUSTOMER_TYPES = ['INDIVIDUAL', 'BUSINESS'] as const;
+
+export type CustomerType = (typeof CUSTOMER_TYPES)[number];
+
+export interface Customer {
+    id: string;
+    code: string;
+    type: CustomerType;
+    name: string;
+    contactPerson: string | null;
+    phone: string | null;
+    email: string | null;
+    address: string | null;
+    notes: string | null;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface Supplier {
+    id: string;
+    code: string;
+    name: string;
+    contactPerson: string | null;
+    phone: string | null;
+    email: string | null;
+    address: string | null;
+    notes: string | null;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export * from './api.js';
 export * from './auth.js';
 export * from './organization-farm.js';
