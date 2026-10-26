@@ -179,52 +179,60 @@ export class UsersService {
   ): Promise<OrganizationMember> {
     const required: PermissionType[] = [Permission.MEMBERSHIP_MANAGE];
     if (input.isActive !== undefined) required.push(Permission.USER_DEACTIVATE);
-    return this.mutate(context, required, async (tx) => {
-      const current = await this.findMember(tx, context, userId);
-      const role = input.role ?? current.role;
-      const isActive = input.isActive ?? current.isActive;
-      const losingAdministration =
-        current.isActive &&
-        current.user.isActive &&
-        this.authorization.hasPermission(
-          current.role,
-          Permission.MEMBERSHIP_MANAGE,
-        ) &&
-        (!isActive ||
-          !this.authorization.hasPermission(
-            role,
+    return this.mutate(
+      context,
+      required,
+      async (tx) => {
+        const current = await this.findMember(tx, context, userId);
+        const role = input.role ?? current.role;
+        const isActive = input.isActive ?? current.isActive;
+        const losingAdministration =
+          current.isActive &&
+          current.user.isActive &&
+          this.authorization.hasPermission(
+            current.role,
             Permission.MEMBERSHIP_MANAGE,
-          ));
-      if (losingAdministration) {
-        const administrativeRoles = Object.values(MembershipRole).filter(
-          (value) =>
-            this.authorization.hasPermission(
-              value,
+          ) &&
+          (!isActive ||
+            !this.authorization.hasPermission(
+              role,
               Permission.MEMBERSHIP_MANAGE,
-            ),
-        );
-        const administrators = await tx.organizationMembership.count({
-          where: {
-            organizationId: context.organizationId,
-            isActive: true,
-            user: { isActive: true },
-            role: { in: administrativeRoles },
-          },
-        });
-        if (administrators <= 1)
-          throw new BusinessException(
-            'LAST_ADMINISTRATOR',
-            'At least one active administrator must remain in the organization',
-            409,
+            ));
+        if (losingAdministration) {
+          const administrativeRoles = Object.values(MembershipRole).filter(
+            (value) =>
+              this.authorization.hasPermission(
+                value,
+                Permission.MEMBERSHIP_MANAGE,
+              ),
           );
-      }
-      const result = await tx.organizationMembership.updateMany({
-        where: context.scope({ userId }),
-        data: { role, isActive },
-      });
-      if (!result.count) throw this.notFound();
-      return this.member(await this.findMember(tx, context, userId));
-    });
+          const administrators = await tx.organizationMembership.count({
+            where: {
+              organizationId: context.organizationId,
+              isActive: true,
+              user: { isActive: true },
+              role: { in: administrativeRoles },
+            },
+          });
+          if (administrators <= 1)
+            throw new BusinessException(
+              'LAST_ADMINISTRATOR',
+              'At least one active administrator must remain in the organization',
+              409,
+            );
+        }
+        const result = await tx.organizationMembership.updateMany({
+          where: context.scope({ userId }),
+          data: { role, isActive },
+        });
+        if (!result.count) throw this.notFound();
+        return this.member(await this.findMember(tx, context, userId));
+      },
+      {
+        lockOrganization: true,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      },
+    );
   }
 
   async replaceFarmAccess(
@@ -296,11 +304,21 @@ export class UsersService {
     context: OrganizationContext,
     permissions: PermissionType[],
     operation: (tx: Prisma.TransactionClient) => Promise<T>,
+    options: {
+      lockOrganization?: boolean;
+      isolationLevel?: Prisma.TransactionIsolationLevel;
+    } = {},
   ): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.prisma.$transaction(
           async (tx) => {
+            if (options.lockOrganization) {
+              // Serialize administrator changes so the next request counts committed state.
+              await tx.$queryRaw(
+                Prisma.sql`SELECT "id" FROM "organizations" WHERE "id" = ${context.organizationId}::uuid FOR UPDATE`,
+              );
+            }
             const actor = await tx.organizationMembership.findFirst({
               where: context.scope({
                 id: context.membershipId,
@@ -324,7 +342,7 @@ export class UsersService {
             }
             return operation(tx);
           },
-          { isolationLevel: 'Serializable' },
+          { isolationLevel: options.isolationLevel ?? 'Serializable' },
         );
       } catch (error) {
         // The pinned PostgreSQL adapter may report commit conflicts directly,
