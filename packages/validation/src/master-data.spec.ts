@@ -244,6 +244,76 @@ describe('Customer validation', () => {
 
             expect(result.success).toBe(false);
         });
+
+        it('allows optional customer fields to be cleared with null', () => {
+            expect(
+                updateCustomerSchema.parse({
+                    contactPerson: null,
+                    phone: null,
+                    email: null,
+                    address: null,
+                    notes: null,
+                }),
+            ).toEqual({
+                contactPerson: null,
+                phone: null,
+                email: null,
+                address: null,
+                notes: null,
+            });
+        });
+
+        it('normalizes blank optional customer update fields to null', () => {
+            expect(
+                updateCustomerSchema.parse({
+                    contactPerson: '   ',
+                    phone: '',
+                    email: ' ',
+                    address: '   ',
+                    notes: '',
+                }),
+            ).toEqual({
+                contactPerson: null,
+                phone: null,
+                email: null,
+                address: null,
+                notes: null,
+            });
+        });
+
+        it('normalizes customer update values', () => {
+            expect(
+                updateCustomerSchema.parse({
+                    contactPerson: '  Jane Doe  ',
+                    phone: ' 876-555-1234 ',
+                    email: '  JANE@EXAMPLE.COM ',
+                    address: '  Spanish Town  ',
+                    notes: '  Preferred customer  ',
+                }),
+            ).toEqual({
+                contactPerson: 'Jane Doe',
+                phone: '876-555-1234',
+                email: 'jane@example.com',
+                address: 'Spanish Town',
+                notes: 'Preferred customer',
+            });
+        });
+
+        it('rejects null customer name', () => {
+            expect(() =>
+                updateCustomerSchema.parse({
+                    name: null,
+                }),
+            ).toThrow();
+        });
+
+        it('rejects null customer type', () => {
+            expect(() =>
+                updateCustomerSchema.parse({
+                    type: null,
+                }),
+            ).toThrow();
+        });
     });
 });
 
@@ -386,6 +456,42 @@ describe('Supplier validation', () => {
             });
 
             expect(result.success).toBe(false);
+        });
+
+        it('allows optional supplier fields to be cleared with null', () => {
+            expect(
+                updateSupplierSchema.parse({
+                    contactPerson: null,
+                    phone: null,
+                    email: null,
+                    address: null,
+                    notes: null,
+                }),
+            ).toEqual({
+                contactPerson: null,
+                phone: null,
+                email: null,
+                address: null,
+                notes: null,
+            });
+        });
+
+        it('normalizes blank optional supplier update fields to null', () => {
+            expect(
+                updateSupplierSchema.parse({
+                    contactPerson: '',
+                    phone: ' ',
+                    email: '   ',
+                    address: '',
+                    notes: ' ',
+                }),
+            ).toEqual({
+                contactPerson: null,
+                phone: null,
+                email: null,
+                address: null,
+                notes: null,
+            });
         });
     });
 });

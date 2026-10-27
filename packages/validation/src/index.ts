@@ -33,6 +33,26 @@ export const optionalEmailSchema = z.preprocess(
 
 export const optionalPhoneSchema = z.preprocess(blankToUndefined, z.string().max(30).optional());
 
+const blankToNull = (value: unknown) => {
+    if (typeof value !== 'string') {
+        return value;
+    }
+
+    const trimmed = value.trim();
+
+    return trimmed === '' ? null : trimmed;
+};
+
+const nullableTextSchema = (maxLength: number) =>
+    z.preprocess(blankToNull, z.string().max(maxLength).nullable());
+
+const nullableEmailSchema = z.preprocess(
+    blankToNull,
+    z.string().trim().toLowerCase().email().max(254).nullable(),
+);
+
+const nullablePhoneSchema = z.preprocess(blankToNull, z.string().max(30).nullable());
+
 const customerFields = {
     type: z.enum(CUSTOMER_TYPES),
     name: requiredNameSchema,
@@ -52,10 +72,29 @@ const supplierFields = {
     notes: optionalTextSchema(2000),
 };
 
+const customerUpdateFields = {
+    type: z.enum(CUSTOMER_TYPES),
+    name: requiredNameSchema,
+    contactPerson: nullableTextSchema(120),
+    phone: nullablePhoneSchema,
+    email: nullableEmailSchema,
+    address: nullableTextSchema(500),
+    notes: nullableTextSchema(2000),
+};
+
+const supplierUpdateFields = {
+    name: requiredNameSchema,
+    contactPerson: nullableTextSchema(120),
+    phone: nullablePhoneSchema,
+    email: nullableEmailSchema,
+    address: nullableTextSchema(500),
+    notes: nullableTextSchema(2000),
+};
+
 export const createCustomerSchema = z.object(customerFields).strict();
 
 export const updateCustomerSchema = z
-    .object(customerFields)
+    .object(customerUpdateFields)
     .partial()
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
@@ -65,7 +104,7 @@ export const updateCustomerSchema = z
 export const createSupplierSchema = z.object(supplierFields).strict();
 
 export const updateSupplierSchema = z
-    .object(supplierFields)
+    .object(supplierUpdateFields)
     .partial()
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
