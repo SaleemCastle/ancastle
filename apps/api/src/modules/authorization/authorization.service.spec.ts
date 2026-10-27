@@ -73,4 +73,56 @@ describe('AuthorizationService', () => {
       );
     },
   );
+
+  it.each([
+    [
+      MembershipRole.ADMIN,
+      [
+        Permission.CUSTOMER_READ,
+        Permission.CUSTOMER_CREATE,
+        Permission.CUSTOMER_UPDATE,
+        Permission.CUSTOMER_DEACTIVATE,
+        Permission.SUPPLIER_READ,
+        Permission.SUPPLIER_CREATE,
+        Permission.SUPPLIER_UPDATE,
+        Permission.SUPPLIER_DEACTIVATE,
+      ],
+      [],
+    ],
+    [
+      MembershipRole.MANAGER,
+      [
+        Permission.CUSTOMER_READ,
+        Permission.CUSTOMER_CREATE,
+        Permission.CUSTOMER_UPDATE,
+        Permission.SUPPLIER_READ,
+        Permission.SUPPLIER_CREATE,
+        Permission.SUPPLIER_UPDATE,
+      ],
+      [Permission.CUSTOMER_DEACTIVATE, Permission.SUPPLIER_DEACTIVATE],
+    ],
+    [
+      MembershipRole.STAFF,
+      [Permission.CUSTOMER_READ, Permission.SUPPLIER_READ],
+      [
+        Permission.CUSTOMER_CREATE,
+        Permission.CUSTOMER_UPDATE,
+        Permission.CUSTOMER_DEACTIVATE,
+        Permission.SUPPLIER_CREATE,
+        Permission.SUPPLIER_UPDATE,
+        Permission.SUPPLIER_DEACTIVATE,
+      ],
+    ],
+  ] as const)(
+    'enforces customer and supplier permission matrix for %s',
+    (role, allowed, denied) => {
+      for (const permission of allowed) {
+        expect(service.hasPermission(role, permission)).toBe(true);
+      }
+
+      for (const permission of denied) {
+        expect(service.hasPermission(role, permission)).toBe(false);
+      }
+    },
+  );
 });

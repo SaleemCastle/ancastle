@@ -26,8 +26,12 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { AuthorizationGuard } from '../authorization/authorization.guard.js';
 import { CurrentOrganization } from '../authorization/current-organization.decorator.js';
 import { OrganizationContext } from '../authorization/organization-context.js';
-import { OrganizationParam } from '../authorization/require-permissions.decorator.js';
+import {
+  OrganizationParam,
+  RequirePermissions,
+} from '../authorization/require-permissions.decorator.js';
 import { SuppliersService } from './suppliers.service.js';
+import { Permission } from '../authorization/permissions.js';
 
 @Controller('organizations/:organizationId/suppliers')
 @UseGuards(AuthGuard, AuthorizationGuard)
@@ -36,6 +40,7 @@ export class SuppliersController {
   constructor(private readonly suppliers: SuppliersService) {}
 
   @Get()
+  @RequirePermissions(Permission.SUPPLIER_READ)
   list(
     @CurrentOrganization() context: OrganizationContext,
     @Query(new ZodValidationPipe(masterDataQuerySchema))
@@ -45,6 +50,7 @@ export class SuppliersController {
   }
 
   @Post()
+  @RequirePermissions(Permission.SUPPLIER_CREATE)
   async create(
     @CurrentOrganization() context: OrganizationContext,
     @Body(new ZodValidationPipe(createSupplierSchema))
@@ -56,6 +62,7 @@ export class SuppliersController {
   }
 
   @Get(':supplierId')
+  @RequirePermissions(Permission.SUPPLIER_READ)
   async get(
     @CurrentOrganization() context: OrganizationContext,
     @Param('supplierId', new ZodValidationPipe(resourceIdSchema))
@@ -67,6 +74,7 @@ export class SuppliersController {
   }
 
   @Patch(':supplierId')
+  @RequirePermissions(Permission.SUPPLIER_UPDATE)
   async update(
     @CurrentOrganization() context: OrganizationContext,
     @Param('supplierId', new ZodValidationPipe(resourceIdSchema))
@@ -80,6 +88,7 @@ export class SuppliersController {
   }
 
   @Post(':supplierId/deactivate')
+  @RequirePermissions(Permission.SUPPLIER_DEACTIVATE)
   async deactivate(
     @CurrentOrganization() context: OrganizationContext,
     @Param('supplierId', new ZodValidationPipe(resourceIdSchema))
@@ -91,6 +100,7 @@ export class SuppliersController {
   }
 
   @Post(':supplierId/reactivate')
+  @RequirePermissions(Permission.SUPPLIER_DEACTIVATE)
   async reactivate(
     @CurrentOrganization() context: OrganizationContext,
     @Param('supplierId', new ZodValidationPipe(resourceIdSchema))

@@ -7,6 +7,16 @@ export const Permission = {
   FARM_CREATE: 'farm:create',
   FARM_UPDATE: 'farm:update',
 
+  CUSTOMER_READ: 'customer:read',
+  CUSTOMER_CREATE: 'customer:create',
+  CUSTOMER_UPDATE: 'customer:update',
+  CUSTOMER_DEACTIVATE: 'customer:deactivate',
+
+  SUPPLIER_READ: 'supplier:read',
+  SUPPLIER_CREATE: 'supplier:create',
+  SUPPLIER_UPDATE: 'supplier:update',
+  SUPPLIER_DEACTIVATE: 'supplier:deactivate',
+
   USER_READ: 'user:read',
   USER_CREATE: 'user:create',
   USER_UPDATE: 'user:update',
