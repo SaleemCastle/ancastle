@@ -43,6 +43,20 @@ export interface Supplier {
     updatedAt: string;
 }
 
+export interface CustomerResponse {
+    data: Customer;
+}
+
+export interface CustomerListResponse {
+    data: Customer[];
+    meta: {
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+    };
+}
+
 export * from './api.js';
 export * from './auth.js';
 export * from './organization-farm.js';
