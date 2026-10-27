@@ -26,8 +26,12 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { AuthorizationGuard } from '../authorization/authorization.guard.js';
 import { CurrentOrganization } from '../authorization/current-organization.decorator.js';
 import { OrganizationContext } from '../authorization/organization-context.js';
-import { OrganizationParam } from '../authorization/require-permissions.decorator.js';
+import {
+  OrganizationParam,
+  RequirePermissions,
+} from '../authorization/require-permissions.decorator.js';
 import { CustomersService } from './customers.service.js';
+import { Permission } from '../authorization/permissions.js';
 
 @Controller('organizations/:organizationId/customers')
 @UseGuards(AuthGuard, AuthorizationGuard)
@@ -36,6 +40,7 @@ export class CustomersController {
   constructor(private readonly customers: CustomersService) {}
 
   @Get()
+  @RequirePermissions(Permission.CUSTOMER_READ)
   list(
     @CurrentOrganization() context: OrganizationContext,
     @Query(new ZodValidationPipe(masterDataQuerySchema))
@@ -45,6 +50,7 @@ export class CustomersController {
   }
 
   @Post()
+  @RequirePermissions(Permission.CUSTOMER_CREATE)
   async create(
     @CurrentOrganization() context: OrganizationContext,
     @Body(new ZodValidationPipe(createCustomerSchema))
@@ -56,6 +62,7 @@ export class CustomersController {
   }
 
   @Get(':customerId')
+  @RequirePermissions(Permission.CUSTOMER_READ)
   async get(
     @CurrentOrganization() context: OrganizationContext,
     @Param('customerId', new ZodValidationPipe(resourceIdSchema))
@@ -67,6 +74,7 @@ export class CustomersController {
   }
 
   @Patch(':customerId')
+  @RequirePermissions(Permission.CUSTOMER_UPDATE)
   async update(
     @CurrentOrganization() context: OrganizationContext,
     @Param('customerId', new ZodValidationPipe(resourceIdSchema))
@@ -80,6 +88,7 @@ export class CustomersController {
   }
 
   @Post(':customerId/deactivate')
+  @RequirePermissions(Permission.CUSTOMER_DEACTIVATE)
   async deactivate(
     @CurrentOrganization() context: OrganizationContext,
     @Param('customerId', new ZodValidationPipe(resourceIdSchema))
@@ -91,6 +100,7 @@ export class CustomersController {
   }
 
   @Post(':customerId/reactivate')
+  @RequirePermissions(Permission.CUSTOMER_DEACTIVATE)
   async reactivate(
     @CurrentOrganization() context: OrganizationContext,
     @Param('customerId', new ZodValidationPipe(resourceIdSchema))

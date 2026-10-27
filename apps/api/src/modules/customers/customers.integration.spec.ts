@@ -19,6 +19,9 @@ describe('Customer management API (HTTP + PostgreSQL)', () => {
 
   const users = {
     admin: randomUUID(),
+    manager: randomUUID(),
+    staff: randomUUID(),
+    crossRole: randomUUID(),
     outsider: randomUUID(),
   };
 
@@ -27,6 +30,10 @@ describe('Customer management API (HTTP + PostgreSQL)', () => {
   const membershipIds = {
     adminA: randomUUID(),
     adminB: randomUUID(),
+    managerA: randomUUID(),
+    staffA: randomUUID(),
+    crossRoleA: randomUUID(),
+    crossRoleB: randomUUID(),
   };
 
   const customers = {
@@ -81,6 +88,30 @@ describe('Customer management API (HTTP + PostgreSQL)', () => {
           organizationId: orgB,
           userId: users.admin,
           role: 'ADMIN',
+        },
+        {
+          id: membershipIds.managerA,
+          organizationId: orgA,
+          userId: users.manager,
+          role: 'MANAGER',
+        },
+        {
+          id: membershipIds.staffA,
+          organizationId: orgA,
+          userId: users.staff,
+          role: 'STAFF',
+        },
+        {
+          id: membershipIds.crossRoleA,
+          organizationId: orgA,
+          userId: users.crossRole,
+          role: 'OWNER',
+        },
+        {
+          id: membershipIds.crossRoleB,
+          organizationId: orgB,
+          userId: users.crossRole,
+          role: 'STAFF',
         },
       ],
     });
@@ -663,6 +694,106 @@ describe('Customer management API (HTTP + PostgreSQL)', () => {
         expect(after.isActive).toBe(before.isActive);
       },
     );
+
+    describe('authorization', () => {
+      it('allows managers to read, create, and update customers', async () => {
+        await request(app.getHttpServer())
+          .get(`/api/organizations/${orgA}/customers`)
+          .set('Authorization', `Bearer ${tokens[users.manager]}`)
+          .expect(200);
+
+        const created = await request(app.getHttpServer())
+          .post(`/api/organizations/${orgA}/customers`)
+          .set('Authorization', `Bearer ${tokens[users.manager]}`)
+          .send({
+            type: 'BUSINESS',
+            name: 'Manager Created Customer',
+          })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .patch(`/api/organizations/${orgA}/customers/${created.body.data.id}`)
+          .set('Authorization', `Bearer ${tokens[users.manager]}`)
+          .send({ name: 'Manager Updated Customer' })
+          .expect(200);
+      });
+
+      it('forbids managers from changing customer lifecycle state', async () => {
+        const response = await request(app.getHttpServer())
+          .post(
+            `/api/organizations/${orgA}/customers/${customers.alpha}/deactivate`,
+          )
+          .set('Authorization', `Bearer ${tokens[users.manager]}`)
+          .expect(403);
+
+        expect(response.body).toEqual({
+          error: {
+            code: 'FORBIDDEN',
+            message: 'You do not have permission to perform this action',
+          },
+        });
+
+        const customer = await prisma.customer.findUnique({
+          where: { id: customers.alpha },
+        });
+
+        expect(customer?.isActive).toBe(true);
+      });
+
+      it('allows staff to read customers but forbids writes', async () => {
+        await request(app.getHttpServer())
+          .get(`/api/organizations/${orgA}/customers`)
+          .set('Authorization', `Bearer ${tokens[users.staff]}`)
+          .expect(200);
+
+        await request(app.getHttpServer())
+          .post(`/api/organizations/${orgA}/customers`)
+          .set('Authorization', `Bearer ${tokens[users.staff]}`)
+          .send({
+            type: 'BUSINESS',
+            name: 'Forbidden Staff Customer',
+          })
+          .expect(403);
+
+        await request(app.getHttpServer())
+          .patch(`/api/organizations/${orgA}/customers/${customers.alpha}`)
+          .set('Authorization', `Bearer ${tokens[users.staff]}`)
+          .send({ name: 'Forbidden Staff Update' })
+          .expect(403);
+
+        await request(app.getHttpServer())
+          .post(
+            `/api/organizations/${orgA}/customers/${customers.alpha}/deactivate`,
+          )
+          .set('Authorization', `Bearer ${tokens[users.staff]}`)
+          .expect(403);
+      });
+
+      it('uses the role from the selected organization instead of a stronger role in another organization', async () => {
+        await request(app.getHttpServer())
+          .post(`/api/organizations/${orgB}/customers`)
+          .set('Authorization', `Bearer ${tokens[users.crossRole]}`)
+          .send({
+            type: 'BUSINESS',
+            name: 'Cross Organization Escalation',
+          })
+          .expect(403);
+
+        await request(app.getHttpServer())
+          .get(`/api/organizations/${orgB}/customers`)
+          .set('Authorization', `Bearer ${tokens[users.crossRole]}`)
+          .expect(200);
+
+        const leaked = await prisma.customer.findFirst({
+          where: {
+            organizationId: orgB,
+            name: 'Cross Organization Escalation',
+          },
+        });
+
+        expect(leaked).toBeNull();
+      });
+    });
   });
 
   describe('concurrent customer creation', () => {
