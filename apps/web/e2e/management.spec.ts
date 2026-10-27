@@ -229,7 +229,7 @@ test('paginates and filters the real scoped farm list', async ({ page, account }
     await page.goto(url('/app/farms', account.organizationId) + '&pageSize=2');
     await expect(page.locator('tbody tr')).toHaveCount(2);
     await expect(page.getByText('5 farms · Page 1 of 3', { exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Next page', exact: true }).click();
+    await page.getByRole('link', { name: 'Next farm page', exact: true }).click();
     await expect(page.getByText('5 farms · Page 2 of 3', { exact: true })).toBeVisible();
     await page.getByLabel('Status', { exact: true }).selectOption('false');
     await page.getByRole('button', { name: 'Apply filter', exact: true }).click();

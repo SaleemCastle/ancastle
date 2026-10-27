@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 
 export interface MasterDataColumn<T> {
     key: string;
@@ -99,14 +99,9 @@ export function MasterDataList<T>({
                 </div>
 
                 {primaryAction && (
-                    <Button
-                        nativeButton={false}
-                        render={
-                            <Link prefetch={false} href={primaryAction.href}>
-                                {primaryAction.label}
-                            </Link>
-                        }
-                    />
+                    <Link prefetch={false} href={primaryAction.href} className={buttonVariants()}>
+                        {primaryAction.label}
+                    </Link>
                 )}
             </header>
 
@@ -263,20 +258,15 @@ export function MasterDataList<T>({
 
                     <div className="flex items-center gap-2">
                         {pagination.previousHref ? (
-                            <Button
-                                nativeButton={false}
-                                variant="outline"
-                                render={
-                                    <Link
-                                        prefetch={false}
-                                        href={pagination.previousHref}
-                                        aria-label={`Previous ${pagination.itemLabel} page`}
-                                    >
-                                        <ChevronLeft aria-hidden="true" />
-                                        Previous
-                                    </Link>
-                                }
-                            />
+                            <Link
+                                prefetch={false}
+                                href={pagination.previousHref}
+                                aria-label={`Previous ${pagination.itemLabel} page`}
+                                className={buttonVariants({ variant: 'outline' })}
+                            >
+                                <ChevronLeft aria-hidden="true" />
+                                Previous
+                            </Link>
                         ) : (
                             <Button variant="outline" disabled>
                                 <ChevronLeft aria-hidden="true" />
@@ -285,20 +275,15 @@ export function MasterDataList<T>({
                         )}
 
                         {pagination.nextHref ? (
-                            <Button
-                                nativeButton={false}
-                                variant="outline"
-                                render={
-                                    <Link
-                                        prefetch={false}
-                                        href={pagination.nextHref}
-                                        aria-label={`Next ${pagination.itemLabel} page`}
-                                    >
-                                        Next
-                                        <ChevronRight aria-hidden="true" />
-                                    </Link>
-                                }
-                            />
+                            <Link
+                                prefetch={false}
+                                href={pagination.nextHref}
+                                aria-label={`Next ${pagination.itemLabel} page`}
+                                className={buttonVariants({ variant: 'outline' })}
+                            >
+                                Next
+                                <ChevronRight aria-hidden="true" />
+                            </Link>
                         ) : (
                             <Button variant="outline" disabled>
                                 Next
