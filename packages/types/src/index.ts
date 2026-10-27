@@ -43,6 +43,20 @@ export interface Supplier {
     updatedAt: string;
 }
 
+export interface SupplierResponse {
+    data: Supplier;
+}
+
+export interface SupplierListResponse {
+    data: Supplier[];
+    meta: {
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+    };
+}
+
 export interface CustomerResponse {
     data: Customer;
 }

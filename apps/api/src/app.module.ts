@@ -13,6 +13,7 @@ import { FarmsModule } from './modules/farms/farms.module.js';
 
 import { UsersModule } from './modules/users/users.module.js';
 import { CustomersModule } from './modules/customers/customers.module.js';
+import { SuppliersModule } from './modules/suppliers/suppliers.module.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { CustomersModule } from './modules/customers/customers.module.js';
     FarmsModule,
     UsersModule,
     CustomersModule,
+    SuppliersModule,
   ],
 })
 export class AppModule {}
