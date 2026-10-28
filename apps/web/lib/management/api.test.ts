@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { farmResponseSchema } from '@ancastle/validation';
-import { fetchManagement } from './api';
+import { fetchManagement, customerListResponseSchema, customerResponseSchema } from './api';
 import { AuthenticationRejectedError, AuthUnavailableError } from '../auth/errors';
 
 const data = {
@@ -63,6 +63,79 @@ describe('Management API transport', () => {
             });
         },
     );
+
+    it('validates Customer DTOs and strips unexpected response fields', async () => {
+        const customer = {
+            id: randomUUID(),
+            code: 'CUS-000001',
+            type: 'BUSINESS' as const,
+            name: 'Castle Produce Ltd',
+            contactPerson: 'Jane Castle',
+            phone: '876-555-0100',
+            email: 'sales@example.com',
+            address: 'Spanish Town',
+            notes: null,
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
+
+        const detailFetcher = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    data: {
+                        ...customer,
+                        organizationId: randomUUID(),
+                        privateField: 'must-not-return',
+                    },
+                }),
+            ),
+        );
+
+        expect(
+            await fetchManagement(
+                'organizations/example/customers/' + customer.id,
+                customerResponseSchema,
+                'test-access',
+                {},
+                detailFetcher,
+            ),
+        ).toEqual({
+            data: customer,
+        });
+
+        const listFetcher = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    data: [customer],
+                    meta: {
+                        page: 1,
+                        pageSize: 20,
+                        totalItems: 1,
+                        totalPages: 1,
+                    },
+                }),
+            ),
+        );
+
+        expect(
+            await fetchManagement(
+                'organizations/example/customers',
+                customerListResponseSchema,
+                'test-access',
+                {},
+                listFetcher,
+            ),
+        ).toEqual({
+            data: [customer],
+            meta: {
+                page: 1,
+                pageSize: 20,
+                totalItems: 1,
+                totalPages: 1,
+            },
+        });
+    });
     it('distinguishes 401 for existing refresh coordination and sanitizes unexpected/invalid responses', async () => {
         await expect(
             fetchManagement(

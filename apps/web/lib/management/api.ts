@@ -1,10 +1,11 @@
 import 'server-only';
-import type { z } from 'zod';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { authConfig } from '../auth/config';
 import { AuthenticationRejectedError, AuthUnavailableError } from '../auth/errors';
 import { webSessions } from '../auth/sessions';
+import { z } from 'zod';
+import { CUSTOMER_TYPES } from '@ancastle/types';
 
 const messages: Record<string, string> = {
     ORGANIZATION_USER_NOT_FOUND: 'This resource is unavailable.',
@@ -17,12 +18,43 @@ const messages: Record<string, string> = {
     ORGANIZATION_NOT_FOUND: 'This resource is unavailable.',
     FARM_CODE_EXISTS: 'A farm with this code already exists in this organization.',
     VALIDATION_ERROR: 'Check the form values and try again.',
+    CUSTOMER_NOT_FOUND: 'This resource is unavailable.',
+    CUSTOMER_CODE_EXISTS: 'A customer with this code already exists in this organization.',
 };
 export class ManagementApiError extends Error {
     constructor(readonly code: string) {
         super(messages[code] ?? 'This request could not be completed.');
     }
 }
+
+const customerSchema = z.object({
+    id: z.uuid(),
+    code: z.string(),
+    type: z.enum(CUSTOMER_TYPES),
+    name: z.string(),
+    contactPerson: z.string().nullable(),
+    phone: z.string().nullable(),
+    email: z.string().nullable(),
+    address: z.string().nullable(),
+    notes: z.string().nullable(),
+    isActive: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+});
+
+export const customerResponseSchema = z.object({
+    data: customerSchema,
+});
+
+export const customerListResponseSchema = z.object({
+    data: z.array(customerSchema),
+    meta: z.object({
+        page: z.number().int().min(1),
+        pageSize: z.number().int().min(1),
+        totalItems: z.number().int().min(0),
+        totalPages: z.number().int().min(0),
+    }),
+});
 
 export async function fetchManagement<T>(
     path: string,

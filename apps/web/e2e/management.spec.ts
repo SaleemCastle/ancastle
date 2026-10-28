@@ -282,3 +282,459 @@ test('keeps farm administration usable on mobile and desktop', async ({ page, ac
         );
     }
 });
+
+test('creates, edits, deactivates and reactivates a customer through the real APIs', async ({
+    page,
+    account,
+}) => {
+    await account.addFarm('Responsive Farm', 'RESPONSIVE');
+    await signIn(page, account);
+
+    await page
+        .getByRole('navigation', { name: 'Primary navigation' })
+        .getByRole('link', { name: 'Customers', exact: true })
+        .click();
+
+    await expect(page.getByText('No customers match this view.', { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Add customer', exact: true }).click();
+
+    const create = page.getByRole('form', {
+        name: 'Create customer',
+        exact: true,
+    });
+
+    await create.getByLabel('Customer type', { exact: true }).selectOption('BUSINESS');
+
+    await create.getByLabel('Customer name', { exact: true }).fill('Castle Produce Ltd');
+
+    await create.getByLabel('Contact person', { exact: true }).fill('Jane Castle');
+
+    await create.getByLabel('Phone', { exact: true }).fill('876-555-0100');
+
+    await create.getByLabel('Email', { exact: true }).fill('SALES@EXAMPLE.COM');
+
+    await create.getByLabel('Address', { exact: true }).fill('Spanish Town');
+
+    await create.getByLabel('Notes', { exact: true }).fill('Wholesale customer');
+
+    await create.getByRole('button', { name: 'Create customer', exact: true }).click();
+
+    await expect(create.getByRole('status')).toHaveText('Customer created.');
+
+    await create
+        .getByRole('link', {
+            name: 'View created customer',
+            exact: true,
+        })
+        .click();
+
+    await expect(
+        page.getByRole('heading', {
+            name: 'Castle Produce Ltd',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await expect(page.getByText('Type: Business', { exact: true })).toBeVisible();
+
+    const edit = page.getByRole('form', {
+        name: 'Edit customer',
+        exact: true,
+    });
+
+    await expect(edit.getByLabel('Customer type', { exact: true })).toHaveValue('BUSINESS');
+
+    await expect(edit.getByLabel('Email', { exact: true })).toHaveValue('sales@example.com');
+
+    await edit.getByLabel('Customer name', { exact: true }).fill('Ancastle Produce Ltd');
+
+    await edit.getByLabel('Contact person', { exact: true }).fill('John Castle');
+
+    await edit.getByRole('button', { name: 'Save changes', exact: true }).click();
+
+    await expect(edit.getByRole('status')).toHaveText('Customer saved.');
+
+    await expect(
+        page.getByRole('heading', {
+            name: 'Ancastle Produce Ltd',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    const lifecycle = page.getByRole('form', {
+        name: 'Customer lifecycle',
+        exact: true,
+    });
+
+    await lifecycle
+        .getByRole('button', {
+            name: 'Deactivate customer',
+            exact: true,
+        })
+        .click();
+
+    await expect(lifecycle.getByRole('status')).toHaveText('Customer deactivated.');
+
+    await expect(page.getByRole('status', { name: 'Status: Inactive', exact: true })).toBeVisible();
+
+    await lifecycle
+        .getByRole('button', {
+            name: 'Reactivate customer',
+            exact: true,
+        })
+        .click();
+
+    await expect(lifecycle.getByRole('status')).toHaveText('Customer reactivated.');
+
+    await expect(page.getByRole('status', { name: 'Status: Active', exact: true })).toBeVisible();
+
+    await expect
+        .poll(() => account.findCustomer('CUS-000001'))
+        .toMatchObject({
+            name: 'Ancastle Produce Ltd',
+            type: 'BUSINESS',
+            contactPerson: 'John Castle',
+            email: 'sales@example.com',
+            isActive: true,
+        });
+});
+
+test('enforces customer management permissions in the UI', async ({ page, account }) => {
+    const customer = await account.addCustomer('Permission Customer', {
+        type: 'BUSINESS',
+        contactPerson: 'Test Contact',
+        email: 'permissions@example.com',
+    });
+
+    await account.setRole('STAFF');
+    await signIn(page, account);
+
+    await page.goto(url(`/app/customers/${customer.id}`, account.organizationId));
+
+    await expect(
+        page.getByRole('heading', {
+            name: 'Permission Customer',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await expect(
+        page.getByRole('form', {
+            name: 'Edit customer',
+            exact: true,
+        }),
+    ).toHaveCount(0);
+
+    await expect(
+        page.getByRole('form', {
+            name: 'Customer lifecycle',
+            exact: true,
+        }),
+    ).toHaveCount(0);
+
+    await page.goto(url('/app/customers', account.organizationId));
+
+    await expect(
+        page.getByRole('link', {
+            name: 'Add customer',
+            exact: true,
+        }),
+    ).toHaveCount(0);
+
+    await account.setRole('MANAGER');
+
+    await page.goto(url(`/app/customers/${customer.id}`, account.organizationId));
+
+    await expect(
+        page.getByRole('form', {
+            name: 'Edit customer',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await expect(
+        page.getByRole('form', {
+            name: 'Customer lifecycle',
+            exact: true,
+        }),
+    ).toHaveCount(0);
+
+    await page.goto(url('/app/customers', account.organizationId));
+
+    await expect(
+        page.getByRole('link', {
+            name: 'Add customer',
+            exact: true,
+        }),
+    ).toBeVisible();
+});
+
+test('supports customer search, lifecycle filtering and pagination', async ({ page, account }) => {
+    await account.addCustomer('Alpha Farms Customer', {
+        type: 'BUSINESS',
+        email: 'alpha@example.com',
+    });
+
+    await account.addCustomer('Bravo Retail Customer', {
+        type: 'INDIVIDUAL',
+        phone: '876-555-0200',
+    });
+
+    await account.addCustomer('Charlie Wholesale Customer', {
+        type: 'BUSINESS',
+        isActive: false,
+    });
+
+    await signIn(page, account);
+
+    // Search
+    await page.goto(url('/app/customers', account.organizationId));
+
+    const search = page.getByRole('search');
+
+    await search.getByRole('searchbox').fill('Alpha Farms');
+
+    await search.getByRole('button', { name: 'Search', exact: true }).click();
+
+    await expect(
+        page
+            .getByRole('cell')
+            .filter({ hasText: 'Alpha Farms Customer' })
+            .getByText('Alpha Farms Customer', { exact: true })
+            .first(),
+    ).toBeVisible();
+
+    await expect(page.getByRole('cell').filter({ hasText: 'Bravo Retail Customer' })).toHaveCount(
+        0,
+    );
+
+    // Inactive lifecycle filter.
+    await page.goto(url('/app/customers', account.organizationId) + '&isActive=false');
+
+    await expect(
+        page
+            .getByRole('cell')
+            .filter({ hasText: 'Charlie Wholesale Customer' })
+            .getByText('Charlie Wholesale Customer', { exact: true })
+            .first(),
+    ).toBeVisible();
+
+    await expect(page.getByRole('cell').filter({ hasText: 'Alpha Farms Customer' })).toHaveCount(0);
+
+    // Force pagination with a page size of 1.
+    await page.goto(url('/app/customers', account.organizationId) + '&page=1&pageSize=1');
+
+    await expect(page.getByText(/3 customers.*Page 1 of 3/)).toBeVisible();
+
+    const next = page.getByRole('link', {
+        name: 'Next customer page',
+        exact: true,
+    });
+
+    await expect(next).toBeVisible();
+    await next.click();
+
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByText(/3 customers.*Page 2 of 3/)).toBeVisible();
+});
+
+test('rejects cross-organization customer detail IDs and tampered customer mutation IDs without modifying either tenant', async ({
+    page,
+    account,
+}) => {
+    const own = await account.addCustomer('Own Customer', {
+        type: 'BUSINESS',
+        email: 'own@example.com',
+    });
+
+    const otherOrg = await account.addOrganization('Other Organization', 'STAFF');
+
+    const foreign = await account.addCustomer('Other Customer', {
+        organizationId: otherOrg,
+        type: 'BUSINESS',
+        email: 'other@example.com',
+    });
+
+    await signIn(page, account);
+
+    // A Customer ID from another organization must not be readable
+    // through the currently selected organization.
+    await page.goto(url('/app/customers/' + foreign.id, account.organizationId));
+
+    await expect(page.getByRole('main').getByRole('alert')).toHaveText(
+        'This resource is unavailable.',
+    );
+
+    await expect(
+        page.getByRole('heading', {
+            name: 'Other Customer',
+            exact: true,
+        }),
+    ).toHaveCount(0);
+
+    // Open a legitimate Customer belonging to the selected organization.
+    await page.goto(url('/app/customers/' + own.id, account.organizationId));
+
+    const edit = page.getByRole('form', {
+        name: 'Edit customer',
+        exact: true,
+    });
+
+    await expect(edit).toBeVisible();
+
+    // Tamper with the hidden Customer ID so the form attempts to update
+    // a Customer belonging to the other organization.
+    await edit.locator('input[name="customerId"]').evaluate((input, id) => {
+        (input as HTMLInputElement).value = id;
+    }, foreign.id);
+
+    await edit.getByLabel('Customer name', { exact: true }).fill('Cross Tenant Write');
+
+    await edit
+        .getByRole('button', {
+            name: 'Save changes',
+            exact: true,
+        })
+        .click();
+
+    await expect(edit.getByRole('alert')).toHaveText('This resource is unavailable.');
+
+    // Neither tenant's Customer should have been modified.
+    expect(await account.findCustomer(own.code)).toMatchObject({
+        name: 'Own Customer',
+    });
+
+    expect(await account.findCustomer(foreign.code, otherOrg)).toMatchObject({
+        name: 'Other Customer',
+    });
+});
+
+test('keeps customer management usable across mobile and desktop layouts', async ({
+    page,
+    account,
+}) => {
+    await account.addCustomer('Responsive Customer', {
+        type: 'BUSINESS',
+        contactPerson: 'Test Contact',
+        email: 'responsive@example.com',
+    });
+
+    await signIn(page, account);
+
+    // Mobile Customer list.
+    await page.setViewportSize({
+        width: 375,
+        height: 812,
+    });
+
+    await page.goto(url('/app/customers', account.organizationId));
+
+    await expect(
+        page.getByRole('heading', {
+            name: 'Customers',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await expect(
+        page.getByRole('link', {
+            name: 'Add customer',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await expect(
+        page.getByRole('cell', {
+            name: 'Responsive Customer Business',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    // The page itself should not introduce horizontal overflow.
+    const mobileLayout = await page.evaluate(() => {
+        const main = document.querySelector('main');
+        const table = document.querySelector('table');
+        const scrollContainer = table?.parentElement;
+
+        return {
+            viewportWidth: document.documentElement.clientWidth,
+            body: {
+                scrollWidth: document.body.scrollWidth,
+                clientWidth: document.body.clientWidth,
+            },
+            main: main
+                ? {
+                      scrollWidth: main.scrollWidth,
+                      clientWidth: main.clientWidth,
+                  }
+                : null,
+            tableContainer: scrollContainer
+                ? {
+                      scrollWidth: scrollContainer.scrollWidth,
+                      clientWidth: scrollContainer.clientWidth,
+                      overflowX: getComputedStyle(scrollContainer).overflowX,
+                  }
+                : null,
+        };
+    });
+
+    expect(mobileLayout.body.scrollWidth).toBeLessThanOrEqual(mobileLayout.viewportWidth);
+
+    expect(mobileLayout.main).not.toBeNull();
+
+    expect(mobileLayout.main!.scrollWidth).toBeLessThanOrEqual(mobileLayout.main!.clientWidth);
+
+    expect(mobileLayout.tableContainer).not.toBeNull();
+
+    expect(mobileLayout.tableContainer!.overflowX).toBe('auto');
+
+    expect(mobileLayout.tableContainer!.scrollWidth).toBeGreaterThan(
+        mobileLayout.tableContainer!.clientWidth,
+    );
+    // Mobile create form remains usable.
+    await page
+        .getByRole('link', {
+            name: 'Add customer',
+            exact: true,
+        })
+        .click();
+
+    await expect(
+        page.getByRole('form', {
+            name: 'Create customer',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await expect(page.getByLabel('Customer name', { exact: true })).toBeVisible();
+
+    // Desktop Customer list remains usable after resizing.
+    await page.setViewportSize({
+        width: 1280,
+        height: 900,
+    });
+
+    await page.goto(url('/app/customers', account.organizationId));
+
+    await expect(
+        page.getByRole('heading', {
+            name: 'Customers',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await expect(
+        page.getByRole('cell', {
+            name: 'Responsive Customer Business',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    await expect(
+        page.getByRole('link', {
+            name: 'Add customer',
+            exact: true,
+        }),
+    ).toBeVisible();
+});

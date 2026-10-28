@@ -57,6 +57,7 @@ interface MasterDataListProps<T> {
 export function MasterDataStatus({ isActive }: { isActive: boolean }) {
     return (
         <span
+            data-testid="customer-status"
             role="status"
             aria-label={`Status: ${isActive ? 'Active' : 'Inactive'}`}
             className={
