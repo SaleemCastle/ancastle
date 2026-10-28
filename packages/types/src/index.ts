@@ -71,6 +71,41 @@ export interface CustomerListResponse {
     };
 }
 
+export const INVENTORY_UNITS = ['EACH', 'KG', 'G', 'L', 'ML'] as const;
+
+export type InventoryUnit = (typeof INVENTORY_UNITS)[number];
+
+export const INVENTORY_CATEGORIES = ['FEED', 'VITAMIN', 'PRODUCE', 'SUPPLY', 'OTHER'] as const;
+
+export type InventoryCategory = (typeof INVENTORY_CATEGORIES)[number];
+
+export interface InventoryItem {
+    id: string;
+    code: string;
+    name: string;
+    description: string | null;
+    unit: InventoryUnit;
+    category: InventoryCategory;
+    lowStockThreshold: string | null;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface InventoryItemResponse {
+    data: InventoryItem;
+}
+
+export interface InventoryItemListResponse {
+    data: InventoryItem[];
+    meta: {
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+    };
+}
+
 export * from './api.js';
 export * from './auth.js';
 export * from './organization-farm.js';
