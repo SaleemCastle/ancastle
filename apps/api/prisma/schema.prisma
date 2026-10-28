@@ -17,6 +17,22 @@ enum CustomerType {
   BUSINESS
 }
 
+enum InventoryUnit {
+  EACH
+  KG
+  G
+  L
+  ML
+}
+
+enum InventoryCategory {
+  FEED
+  VITAMIN
+  PRODUCE
+  SUPPLY
+  OTHER
+}
+
 model Organization {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
@@ -28,7 +44,8 @@ model Organization {
   farms                   Farm[]
   organizationMemberships OrganizationMembership[]
   customers               Customer[]
-  supliers                Supplier[]
+  suppliers               Supplier[]
+  inventoryItems          InventoryItem[]
 
   @@map("organizations")
 }
@@ -180,4 +197,28 @@ model Supplier {
   @@index([organizationId])
   @@index([organizationId, isActive])
   @@map("suppliers")
+}
+
+model InventoryItem {
+  id                String            @id @default(uuid()) @db.Uuid
+  organizationId    String            @db.Uuid
+  code              String
+  name              String
+  description       String?
+  unit              InventoryUnit
+  category          InventoryCategory
+  lowStockThreshold Decimal?          @db.Decimal(18, 3)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+  @@index([organizationId, category])
+  @@map("inventory_items")
 }
