@@ -1727,3 +1727,188 @@ and guard implementations are unchanged by this card.
 The suite also exposed same-second and concurrent refresh-rotation regressions.
 Those were corrected separately in M1-03 PR #26, preserving the existing JWT and
 hashed server-session architecture; their milestone assertions remain intact.
+
+---
+
+# M2 Customer and Supplier Master Data
+
+M2 introduces Customers and Suppliers as organization-owned master data. These
+records belong to an Organization rather than an individual Farm so that one
+organization can maintain a single Customer and Supplier directory across all of
+its permitted farms.
+
+Customer and Supplier ownership is established exclusively by the authenticated
+organization context. Clients cannot select or change `organizationId`, generated
+record codes, lifecycle state, IDs or timestamps through create/update payloads.
+The API derives organization ownership from the guarded route context and applies
+the organization predicate to reads, writes, lifecycle operations and collection
+queries.
+
+Customer and Supplier codes are generated independently within each organization.
+The same generated code may therefore exist in different organizations without
+creating a cross-tenant conflict. API response DTOs intentionally omit internal
+organization ownership fields.
+
+## Organization-Level Master Data and Farm-Scoped Operations
+
+Customers and Suppliers are organization-level master data. They are deliberately
+not duplicated per Farm and do not contain a `farmId`. An organization with
+multiple farms therefore uses the same Customer and Supplier records throughout
+its workspace.
+
+This boundary is distinct from operational and transactional records. Future
+inventory, poultry, order, fulfilment and similar farm operations must retain
+their appropriate farm scope while referencing organization-owned master data
+where required. A farm selection must never redefine Customer or Supplier
+ownership.
+
+The application shell may carry both organization and farm selections for user
+context, but Customer and Supplier authorization continues to derive from the
+verified organization. Farm UI state is not an ownership or authorization claim.
+
+## Customer and Supplier Permissions
+
+The central role policy defines the M2 permissions:
+
+| Role    | Read | Create | Update | Deactivate / Reactivate |
+| ------- | ---- | ------ | ------ | ----------------------- |
+| OWNER   | Yes  | Yes    | Yes    | Yes                     |
+| ADMIN   | Yes  | Yes    | Yes    | Yes                     |
+| MANAGER | Yes  | Yes    | Yes    | No                      |
+| STAFF   | Yes  | No     | No     | No                      |
+
+Customer permissions are `customer:read`, `customer:create`, `customer:update`
+and `customer:deactivate`. Supplier permissions use the equivalent
+`supplier:read`, `supplier:create`, `supplier:update` and
+`supplier:deactivate` permissions.
+
+The web application uses fresh application context to determine which controls
+are displayed, while server actions and NestJS guards independently revalidate
+authorization before performing operations. UI visibility is never treated as
+the security boundary.
+
+## Customer API
+
+Customer routes are scoped beneath the verified organization:
+
+| Method | Route under `/api/organizations/:organizationId` | Purpose                      |
+| ------ | ------------------------------------------------ | ---------------------------- |
+| GET    | `/customers`                                     | List/search/filter customers |
+| POST   | `/customers`                                     | Create a customer            |
+| GET    | `/customers/:customerId`                         | Read a customer              |
+| PATCH  | `/customers/:customerId`                         | Update a customer            |
+| POST   | `/customers/:customerId/deactivate`              | Deactivate a customer        |
+| POST   | `/customers/:customerId/reactivate`              | Reactivate a customer        |
+
+Customer records support `INDIVIDUAL` and `BUSINESS` types together with name,
+contact person, phone, email, address and notes. Codes are server-generated and
+cannot be supplied or changed by clients.
+
+## Supplier API
+
+Supplier routes use the same organization-owned lifecycle:
+
+| Method | Route under `/api/organizations/:organizationId` | Purpose                      |
+| ------ | ------------------------------------------------ | ---------------------------- |
+| GET    | `/suppliers`                                     | List/search/filter suppliers |
+| POST   | `/suppliers`                                     | Create a supplier            |
+| GET    | `/suppliers/:supplierId`                         | Read a supplier              |
+| PATCH  | `/suppliers/:supplierId`                         | Update a supplier            |
+| POST   | `/suppliers/:supplierId/deactivate`              | Deactivate a supplier        |
+| POST   | `/suppliers/:supplierId/reactivate`              | Reactivate a supplier        |
+
+Supplier records contain name, contact person, phone, email, address and notes.
+Supplier codes are generated by the server and are immutable through the public
+create/update contracts.
+
+## Search, Filtering and Pagination
+
+Customer and Supplier collection endpoints share the master-data query contract:
+
+- `page` defaults to 1 and must be at least 1.
+- `pageSize` defaults to 20, must be at least 1 and is capped at 100.
+- `search` is optional and limited to 120 characters.
+- `isActive` optionally filters active or inactive records.
+- Unknown query fields are rejected.
+
+Search executes on the server within the verified organization predicate.
+Customer search includes code, name, contact person, email and phone. Supplier
+search uses the equivalent Supplier fields.
+
+Results use deterministic code/ID ordering and the standard pagination metadata.
+The data query and total count use the same organization and filter predicates,
+preventing pagination metadata from leaking records belonging to another tenant.
+
+## Lifecycle and Tenant Isolation
+
+Deactivation is non-destructive. Inactive Customers and Suppliers remain stored
+and can be viewed through the inactive filter and reactivated by an authorized
+user. Lifecycle operations require their dedicated deactivate permission.
+
+Foreign and nonexistent detail/update/lifecycle targets use the same safe
+not-found behavior so callers cannot use response differences to determine
+whether another organization's record exists.
+
+Organization ownership supplied in request payloads is rejected rather than
+trusted. Cross-organization reads, writes, lifecycle operations and search
+results remain constrained by the verified organization. Existing M1 guards
+continue to reject unauthenticated requests and inactive users, memberships and
+organizations.
+
+## M2 Web Workflow
+
+Authorized users manage Customers through `/app/customers` and Suppliers through
+`/app/suppliers`. Creation and detail/edit workflows remain inside the protected
+application shell and preserve the selected organization context.
+
+The reusable master-data list provides server-backed search, active/inactive
+filtering, pagination, loading/error/empty states and responsive presentation.
+Initial empty collections are distinguished from filtered searches with no
+matches.
+
+Lifecycle controls are shown only when the current role has the required
+permission. Server Actions revalidate origin, authenticated organization context
+and permissions before calling the guarded API. Supported fields are explicitly
+whitelisted and validated through the shared contracts.
+
+## M2 Validation
+
+M2 validation covers the complete persistence-to-browser workflow:
+
+1. Authenticate and enter an authorized organization workspace.
+2. Create, view and update a Customer.
+3. Search, filter and paginate Customer records.
+4. Deactivate and reactivate a Customer.
+5. Create, view and update a Supplier.
+6. Search, filter and paginate Supplier records.
+7. Deactivate and reactivate a Supplier.
+8. Verify read-only and lifecycle permission restrictions.
+9. Verify foreign organization records cannot be read, changed or discovered
+   through collection searches.
+10. Verify Customer and Supplier ownership remains organization-level while the
+    organization can contain multiple Farms.
+
+Customer and Supplier HTTP/PostgreSQL integration suites cover CRUD, lifecycle,
+permissions, strict validation, ownership spoofing, organization isolation,
+search/filter/pagination and safe response DTOs. M2-11 includes explicit
+regressions proving an exact search for a foreign organization's Customer or
+Supplier returns no records.
+
+Existing M1 integration coverage remains responsible for authentication,
+inactive user/membership/organization handling, organization/farm context and
+multiple-farm access infrastructure. M2 builds on those boundaries rather than
+duplicating them.
+
+The production browser suite covers Customer and Supplier management through the
+authenticated application shell, including lifecycle operations, Customer query
+handling and responsive application behavior.
+
+## M2 Setup and Verification
+
+For a fresh environment, follow the Clean Local Setup Validation instructions
+above, then generate the Prisma client and apply all committed migrations:
+
+```bash
+pnpm --filter @ancastle/api db:generate
+pnpm --filter @ancastle/api db:migrate:deploy
+```
