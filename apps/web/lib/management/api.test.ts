@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { farmResponseSchema } from '@ancastle/validation';
-import { fetchManagement, customerListResponseSchema, customerResponseSchema } from './api';
+import {
+    fetchManagement,
+    customerListResponseSchema,
+    customerResponseSchema,
+    supplierListResponseSchema,
+    supplierResponseSchema,
+} from './api';
 import { AuthenticationRejectedError, AuthUnavailableError } from '../auth/errors';
 
 const data = {
@@ -136,6 +142,51 @@ describe('Management API transport', () => {
             },
         });
     });
+
+    it('validates supplier management responses', () => {
+        const supplier = {
+            id: 'supplier-1',
+            code: 'SUP-000001',
+            name: 'Ancastle Feed Supplies',
+            contactPerson: 'Jane Brown',
+            phone: '876-555-0100',
+            email: 'sales@example.com',
+            address: 'Spanish Town',
+            notes: 'Primary feed supplier',
+            isActive: true,
+            createdAt: '2026-10-27T12:00:00.000Z',
+            updatedAt: '2026-10-27T12:00:00.000Z',
+        };
+
+        expect(
+            supplierResponseSchema.parse({
+                data: supplier,
+            }),
+        ).toEqual({
+            data: supplier,
+        });
+
+        expect(
+            supplierListResponseSchema.parse({
+                data: [supplier],
+                meta: {
+                    page: 1,
+                    pageSize: 20,
+                    totalItems: 1,
+                    totalPages: 1,
+                },
+            }),
+        ).toEqual({
+            data: [supplier],
+            meta: {
+                page: 1,
+                pageSize: 20,
+                totalItems: 1,
+                totalPages: 1,
+            },
+        });
+    });
+
     it('distinguishes 401 for existing refresh coordination and sanitizes unexpected/invalid responses', async () => {
         await expect(
             fetchManagement(

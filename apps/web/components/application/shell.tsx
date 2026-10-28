@@ -7,6 +7,7 @@ import {
     UsersRound,
     Warehouse,
     ContactRound,
+    Truck,
 } from 'lucide-react';
 import type { ApplicationOrganization } from '@ancastle/types';
 import { LogoutForm } from '@/components/logout-form';
@@ -175,6 +176,17 @@ export function ApplicationShell({
                             >
                                 <ContactRound className="size-4" aria-hidden="true" />
                                 Customers
+                            </Link>
+                        )}
+                        {current?.permissions.includes('supplier:read') && (
+                            <Link
+                                prefetch={false}
+                                aria-current={activePath === '/app/suppliers' ? 'page' : undefined}
+                                href={applicationHref('/app/suppliers', current.organization.id)}
+                                className={navigationClass('/app/suppliers')}
+                            >
+                                <Truck className="size-4" aria-hidden="true" />
+                                Suppliers
                             </Link>
                         )}
                         {current?.permissions.includes('organization:read') && (

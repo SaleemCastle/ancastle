@@ -400,6 +400,116 @@ test('creates, edits, deactivates and reactivates a customer through the real AP
         });
 });
 
+test('creates, edits, deactivates and reactivates a supplier through the real APIs', async ({
+    page,
+    account,
+}) => {
+    await account.addFarm('Responsive Farm', 'RESPONSIVE');
+    await signIn(page, account);
+
+    await page
+        .getByRole('navigation', { name: 'Primary navigation' })
+        .getByRole('link', { name: 'Suppliers', exact: true })
+        .click();
+
+    await expect(page.getByText('No suppliers match this view.', { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Add supplier', exact: true }).click();
+
+    const create = page.getByRole('form', {
+        name: 'Create supplier',
+        exact: true,
+    });
+
+    await create.getByLabel('Supplier name', { exact: true }).fill('Castle Produce Ltd');
+
+    await create.getByLabel('Contact person', { exact: true }).fill('Jane Castle');
+
+    await create.getByLabel('Phone', { exact: true }).fill('876-555-0100');
+
+    await create.getByLabel('Email', { exact: true }).fill('SALES@EXAMPLE.COM');
+
+    await create.getByLabel('Address', { exact: true }).fill('Spanish Town');
+
+    await create.getByLabel('Notes', { exact: true }).fill('Wholesale supplier');
+
+    await create.getByRole('button', { name: 'Create supplier', exact: true }).click();
+
+    await expect(create.getByRole('status')).toHaveText('Supplier created.');
+
+    await create
+        .getByRole('link', {
+            name: 'View created supplier',
+            exact: true,
+        })
+        .click();
+
+    await expect(
+        page.getByRole('heading', {
+            name: 'Castle Produce Ltd',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    const edit = page.getByRole('form', {
+        name: 'Edit supplier',
+        exact: true,
+    });
+
+    await expect(edit.getByLabel('Email', { exact: true })).toHaveValue('sales@example.com');
+
+    await edit.getByLabel('Supplier name', { exact: true }).fill('Ancastle Produce Ltd');
+
+    await edit.getByLabel('Contact person', { exact: true }).fill('John Castle');
+
+    await edit.getByRole('button', { name: 'Save changes', exact: true }).click();
+
+    await expect(edit.getByRole('status')).toHaveText('Supplier saved.');
+
+    await expect(
+        page.getByRole('heading', {
+            name: 'Ancastle Produce Ltd',
+            exact: true,
+        }),
+    ).toBeVisible();
+
+    const lifecycle = page.getByRole('form', {
+        name: 'Supplier lifecycle',
+        exact: true,
+    });
+
+    await lifecycle
+        .getByRole('button', {
+            name: 'Deactivate supplier',
+            exact: true,
+        })
+        .click();
+
+    await expect(lifecycle.getByRole('status')).toHaveText('Supplier deactivated.');
+
+    await expect(page.getByRole('status', { name: 'Status: Inactive', exact: true })).toBeVisible();
+
+    await lifecycle
+        .getByRole('button', {
+            name: 'Reactivate supplier',
+            exact: true,
+        })
+        .click();
+
+    await expect(lifecycle.getByRole('status')).toHaveText('Supplier reactivated.');
+
+    await expect(page.getByRole('status', { name: 'Status: Active', exact: true })).toBeVisible();
+
+    await expect
+        .poll(() => account.findSupplier('SUP-000001'))
+        .toMatchObject({
+            name: 'Ancastle Produce Ltd',
+            contactPerson: 'John Castle',
+            email: 'sales@example.com',
+            isActive: true,
+        });
+});
+
 test('enforces customer management permissions in the UI', async ({ page, account }) => {
     const customer = await account.addCustomer('Permission Customer', {
         type: 'BUSINESS',
