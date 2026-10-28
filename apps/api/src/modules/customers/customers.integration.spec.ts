@@ -371,6 +371,17 @@ describe('Customer management API (HTTP + PostgreSQL)', () => {
       expect(response.body.data[0].id).toBe(expectedId);
     });
 
+    it('does not expose another organization customer through search', async () => {
+      const response = await api()
+        .get(customerPath())
+        .query({ search: 'Foreign Customer' })
+        .set('Authorization', auth());
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([]);
+      expect(response.body.meta.totalItems).toBe(0);
+    });
+
     it('does not expose organization ownership', async () => {
       const response = await api()
         .get(customerPath())
