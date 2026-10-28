@@ -295,7 +295,7 @@ test('creates, edits, deactivates and reactivates a customer through the real AP
         .getByRole('link', { name: 'Customers', exact: true })
         .click();
 
-    await expect(page.getByText('No customers match this view.', { exact: true })).toBeVisible();
+    await expect(page.getByText('No customers yet.', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Add customer', exact: true }).click();
 
@@ -412,7 +412,7 @@ test('creates, edits, deactivates and reactivates a supplier through the real AP
         .getByRole('link', { name: 'Suppliers', exact: true })
         .click();
 
-    await expect(page.getByText('No suppliers match this view.', { exact: true })).toBeVisible();
+    await expect(page.getByText('No suppliers yet.', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Add supplier', exact: true }).click();
 
