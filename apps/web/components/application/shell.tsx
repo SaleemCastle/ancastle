@@ -1,5 +1,13 @@
 import Link from 'next/link';
-import { Building2, LayoutDashboard, Leaf, Settings2, UsersRound, Warehouse } from 'lucide-react';
+import {
+    Building2,
+    LayoutDashboard,
+    Leaf,
+    Settings2,
+    UsersRound,
+    Warehouse,
+    ContactRound,
+} from 'lucide-react';
 import type { ApplicationOrganization } from '@ancastle/types';
 import { LogoutForm } from '@/components/logout-form';
 import { Button } from '@/components/ui/button';
@@ -156,6 +164,17 @@ export function ApplicationShell({
                             >
                                 <Warehouse className="size-4" aria-hidden="true" />
                                 Farms
+                            </Link>
+                        )}
+                        {current?.permissions.includes('customer:read') && (
+                            <Link
+                                prefetch={false}
+                                aria-current={activePath === '/app/customers' ? 'page' : undefined}
+                                href={applicationHref('/app/customers', current.organization.id)}
+                                className={navigationClass('/app/customers')}
+                            >
+                                <ContactRound className="size-4" aria-hidden="true" />
+                                Customers
                             </Link>
                         )}
                         {current?.permissions.includes('organization:read') && (

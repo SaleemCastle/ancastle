@@ -91,6 +91,45 @@ export async function createWebAuthFixture(
         return farm;
       });
     },
+    async addCustomer(
+      name: string,
+      settings: {
+        organizationId?: string;
+        type?: 'INDIVIDUAL' | 'BUSINESS';
+        contactPerson?: string | null;
+        phone?: string | null;
+        email?: string | null;
+        address?: string | null;
+        notes?: string | null;
+        isActive?: boolean;
+      } = {},
+    ) {
+      const organizationId = settings.organizationId ?? organization.id;
+
+      if (!ownedOrganizations.includes(organizationId))
+        throw new Error('Fixture organization is not owned by this test');
+
+      const count = await prisma.customer.count({
+        where: { organizationId },
+      });
+
+      const code = 'CUS-' + String(count + 1).padStart(6, '0');
+
+      return prisma.customer.create({
+        data: {
+          organizationId,
+          code,
+          type: settings.type ?? 'INDIVIDUAL',
+          name,
+          contactPerson: settings.contactPerson ?? null,
+          phone: settings.phone ?? null,
+          email: settings.email ?? null,
+          address: settings.address ?? null,
+          notes: settings.notes ?? null,
+          isActive: settings.isActive ?? true,
+        },
+      });
+    },
     async setRole(role: OrganizationRole, organizationId = organization.id) {
       await prisma.organizationMembership.update({
         where: { organizationId_userId: { organizationId, userId: user.id } },
@@ -203,6 +242,32 @@ export async function createWebAuthFixture(
         select: { id: true, name: true, code: true, isActive: true },
       });
     },
+    async findCustomer(code: string, organizationId = organization.id) {
+      if (!ownedOrganizations.includes(organizationId))
+        throw new Error('Fixture organization is not owned by this test');
+
+      return prisma.customer.findUnique({
+        where: {
+          organizationId_code: {
+            organizationId,
+            code,
+          },
+        },
+        select: {
+          id: true,
+          code: true,
+          type: true,
+          name: true,
+          contactPerson: true,
+          phone: true,
+          email: true,
+          address: true,
+          notes: true,
+          isActive: true,
+        },
+      });
+    },
+
     async deactivateUser() {
       await prisma.user.update({
         where: { id: user.id },
@@ -240,6 +305,9 @@ export async function createWebAuthFixture(
         where: { organizationId: { in: ownedOrganizations } },
       });
       await prisma.farm.deleteMany({
+        where: { organizationId: { in: ownedOrganizations } },
+      });
+      await prisma.customer.deleteMany({
         where: { organizationId: { in: ownedOrganizations } },
       });
       await prisma.organizationMembership.deleteMany({
