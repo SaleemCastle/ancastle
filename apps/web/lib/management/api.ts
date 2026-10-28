@@ -20,6 +20,8 @@ const messages: Record<string, string> = {
     VALIDATION_ERROR: 'Check the form values and try again.',
     CUSTOMER_NOT_FOUND: 'This resource is unavailable.',
     CUSTOMER_CODE_EXISTS: 'A customer with this code already exists in this organization.',
+    SUPPLIER_NOT_FOUND: 'This resource is unavailable.',
+    SUPPLIER_CODE_EXISTS: 'A supplier with this code already exists.',
 };
 export class ManagementApiError extends Error {
     constructor(readonly code: string) {
@@ -53,6 +55,32 @@ export const customerListResponseSchema = z.object({
         pageSize: z.number().int().min(1),
         totalItems: z.number().int().min(0),
         totalPages: z.number().int().min(0),
+    }),
+});
+
+export const supplierResponseSchema = z.object({
+    data: z.object({
+        id: z.string(),
+        code: z.string(),
+        name: z.string(),
+        contactPerson: z.string().nullable(),
+        phone: z.string().nullable(),
+        email: z.string().nullable(),
+        address: z.string().nullable(),
+        notes: z.string().nullable(),
+        isActive: z.boolean(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+    }),
+});
+
+export const supplierListResponseSchema = z.object({
+    data: z.array(supplierResponseSchema.shape.data),
+    meta: z.object({
+        page: z.number(),
+        pageSize: z.number(),
+        totalItems: z.number(),
+        totalPages: z.number(),
     }),
 });
 
