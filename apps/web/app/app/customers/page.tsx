@@ -147,6 +147,8 @@ export default function CustomersPage({
                     },
                 ];
 
+                const hasQuery = Boolean(parsed.data.search) || parsed.data.isActive !== undefined;
+
                 return (
                     <MasterDataList
                         title="Customers"
@@ -221,8 +223,14 @@ export default function CustomersPage({
                                 </Button>
                             </form>
                         }
-                        emptyTitle="No customers match this view."
-                        emptyDescription="Try changing the search or status filter."
+                        emptyTitle={
+                            hasQuery ? 'No customers match this view.' : 'No customers yet.'
+                        }
+                        emptyDescription={
+                            hasQuery
+                                ? 'Try changing the search or status filter.'
+                                : 'Add your first customer to start building your customer directory.'
+                        }
                         pagination={{
                             page: result.meta.page,
                             totalPages: result.meta.totalPages,

@@ -16,7 +16,7 @@ import {
 } from '@/components/management/master-data-list';
 
 export const metadata: Metadata = {
-    title: 'Customers | Ancastle Farms',
+    title: 'Suppliers | Ancastle Farms',
 };
 
 export default function SuppliersPage({
@@ -144,6 +144,8 @@ export default function SuppliersPage({
                     },
                 ];
 
+                const hasQuery = Boolean(parsed.data.search) || parsed.data.isActive !== undefined;
+
                 return (
                     <MasterDataList
                         title="Suppliers"
@@ -218,8 +220,14 @@ export default function SuppliersPage({
                                 </Button>
                             </form>
                         }
-                        emptyTitle="No suppliers match this view."
-                        emptyDescription="Try changing the search or status filter."
+                        emptyTitle={
+                            hasQuery ? 'No suppliers match this view.' : 'No suppliers yet.'
+                        }
+                        emptyDescription={
+                            hasQuery
+                                ? 'Try changing the search or status filter.'
+                                : 'Add your first supplier to start building your supplier directory.'
+                        }
                         pagination={{
                             page: result.meta.page,
                             totalPages: result.meta.totalPages,
