@@ -14,6 +14,7 @@ import { FarmsModule } from './modules/farms/farms.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { CustomersModule } from './modules/customers/customers.module.js';
 import { SuppliersModule } from './modules/suppliers/suppliers.module.js';
+import { InventoryModule } from './modules/inventory/inventory.module.js';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SuppliersModule } from './modules/suppliers/suppliers.module.js';
     UsersModule,
     CustomersModule,
     SuppliersModule,
+    InventoryModule,
   ],
 })
 export class AppModule {}
