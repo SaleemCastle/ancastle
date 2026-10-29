@@ -1,4 +1,4 @@
-import { CUSTOMER_TYPES } from '@ancastle/types';
+import { CUSTOMER_TYPES, INVENTORY_CATEGORIES, INVENTORY_UNITS } from '@ancastle/types';
 import { z } from 'zod';
 
 export const healthStatusSchema = z.object({
@@ -22,6 +22,34 @@ const blankToUndefined = (value: unknown) => {
 };
 
 export const requiredNameSchema = z.string().trim().min(1).max(120);
+
+const inventoryDecimalSchema = z.coerce
+    .number()
+    .finite()
+    .min(0)
+    .refine((value) => Number.isInteger(value * 1000), {
+        message: 'Must have at most 3 decimal places',
+    });
+
+const nonNegativeDecimalSchema = z.preprocess((value) => {
+    if (typeof value === 'string' && value.trim() === '') {
+        return undefined;
+    }
+
+    return value;
+}, z.coerce.number().finite().min(0));
+
+const nullableNonNegativeDecimalSchema = z.preprocess((value) => {
+    if (value === null) {
+        return null;
+    }
+
+    if (typeof value === 'string' && value.trim() === '') {
+        return null;
+    }
+
+    return value;
+}, inventoryDecimalSchema.nullable());
 
 export const optionalTextSchema = (maxLength: number) =>
     z.preprocess(blankToUndefined, z.string().max(maxLength).optional());
@@ -70,6 +98,22 @@ const supplierFields = {
     email: optionalEmailSchema,
     address: optionalTextSchema(500),
     notes: optionalTextSchema(2000),
+};
+
+const inventoryItemFields = {
+    name: requiredNameSchema,
+    description: optionalTextSchema(1000),
+    unit: z.enum(INVENTORY_UNITS),
+    category: z.enum(INVENTORY_CATEGORIES),
+    lowStockThreshold: nonNegativeDecimalSchema.optional(),
+};
+
+const inventoryItemUpdateFields = {
+    name: requiredNameSchema,
+    description: nullableTextSchema(1000),
+    unit: z.enum(INVENTORY_UNITS),
+    category: z.enum(INVENTORY_CATEGORIES),
+    lowStockThreshold: nullableNonNegativeDecimalSchema,
 };
 
 const customerUpdateFields = {
@@ -122,6 +166,18 @@ export const masterDataQuerySchema = z
     })
     .strict();
 
+export const createInventoryItemSchema = z.object(inventoryItemFields).strict();
+
+export const updateInventoryItemSchema = z
+    .object(inventoryItemUpdateFields)
+    .partial()
+    .strict()
+    .refine((data) => Object.keys(data).length > 0, {
+        message: 'At least one field must be provided',
+    });
+
+export const inventoryQuerySchema = masterDataQuerySchema;
+
 export type HealthStatusInput = z.input<typeof healthStatusSchema>;
 export type HealthStatusOutput = z.output<typeof healthStatusSchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
@@ -131,6 +187,10 @@ export type CreateSupplierInput = z.infer<typeof createSupplierSchema>;
 export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;
 
 export type MasterDataQuery = z.infer<typeof masterDataQuerySchema>;
+
+export type CreateInventoryItemInput = z.infer<typeof createInventoryItemSchema>;
+export type UpdateInventoryItemInput = z.infer<typeof updateInventoryItemSchema>;
+export type InventoryQuery = z.infer<typeof inventoryQuerySchema>;
 
 export * from './auth.js';
 export * from './organization-farm.js';
