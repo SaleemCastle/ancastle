@@ -46,6 +46,7 @@ model Organization {
   customers               Customer[]
   suppliers               Supplier[]
   inventoryItems          InventoryItem[]
+  inventoryMovements      InventoryMovement[]
 
   @@map("organizations")
 }
@@ -61,7 +62,8 @@ model Farm {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
-  accessAssignments FarmAccessAssignment[]
+  accessAssignments  FarmAccessAssignment[]
+  inventoryMovements InventoryMovement[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -85,8 +87,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships  OrganizationMembership[]
-  authSessions AuthSession[]
+  memberships        OrganizationMembership[]
+  authSessions       AuthSession[]
+  inventoryMovements InventoryMovement[]
 
   @@map("users")
 }
@@ -215,10 +218,43 @@ model InventoryItem {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
+  inventoryMovements InventoryMovement[]
+
   @@unique([organizationId, id])
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([organizationId, isActive])
   @@index([organizationId, category])
   @@map("inventory_items")
+}
+
+model InventoryMovement {
+  id              String                  @id @default(uuid()) @db.Uuid
+  organizationId  String                  @db.Uuid
+  farmId          String                  @db.Uuid
+  inventoryItemId String                  @db.Uuid
+  actorUserId     String                  @db.Uuid
+  quantity        Decimal                 @db.Decimal(18, 3)
+  reason          InventoryMovementReason
+  occurredAt      DateTime
+  note            String?
+  reference       String?
+  createdAt       DateTime                @default(now())
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm          Farm          @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem InventoryItem @relation(fields: [organizationId, inventoryItemId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser     User          @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([organizationId, farmId, inventoryItemId, occurredAt])
+  @@index([organizationId, inventoryItemId])
+  @@index([actorUserId])
+  @@index([organizationId, occurredAt])
+  @@map("inventory_movements")
+}
+
+enum InventoryMovementReason {
+  RECEIPT
+  ISSUE
+  ADJUSTMENT
 }
