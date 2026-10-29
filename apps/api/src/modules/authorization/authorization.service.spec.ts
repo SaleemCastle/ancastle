@@ -125,4 +125,43 @@ describe('AuthorizationService', () => {
       }
     },
   );
+
+  it.each([
+    [
+      MembershipRole.ADMIN,
+      [
+        Permission.INVENTORY_READ,
+        Permission.INVENTORY_ITEM_MANAGE,
+        Permission.INVENTORY_MOVEMENT_POST,
+        Permission.INVENTORY_LIFECYCLE_MANAGE,
+      ],
+      [],
+    ],
+    [
+      MembershipRole.MANAGER,
+      [
+        Permission.INVENTORY_READ,
+        Permission.INVENTORY_ITEM_MANAGE,
+        Permission.INVENTORY_MOVEMENT_POST,
+        Permission.INVENTORY_LIFECYCLE_MANAGE,
+      ],
+      [],
+    ],
+    [
+      MembershipRole.STAFF,
+      [Permission.INVENTORY_READ, Permission.INVENTORY_MOVEMENT_POST],
+      [Permission.INVENTORY_ITEM_MANAGE, Permission.INVENTORY_LIFECYCLE_MANAGE],
+    ],
+  ] as const)(
+    'enforces inventory permission matrix for %s',
+    (role, allowed, denied) => {
+      for (const permission of allowed) {
+        expect(service.hasPermission(role, permission)).toBe(true);
+      }
+
+      for (const permission of denied) {
+        expect(service.hasPermission(role, permission)).toBe(false);
+      }
+    },
+  );
 });

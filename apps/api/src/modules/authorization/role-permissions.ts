@@ -29,6 +29,11 @@ export const rolePermissions: Record<
     Permission.SUPPLIER_UPDATE,
     Permission.SUPPLIER_DEACTIVATE,
 
+    Permission.INVENTORY_READ,
+    Permission.INVENTORY_ITEM_MANAGE,
+    Permission.INVENTORY_MOVEMENT_POST,
+    Permission.INVENTORY_LIFECYCLE_MANAGE,
+
     Permission.USER_READ,
     Permission.USER_CREATE,
     Permission.USER_UPDATE,
@@ -51,6 +56,11 @@ export const rolePermissions: Record<
     Permission.SUPPLIER_CREATE,
     Permission.SUPPLIER_UPDATE,
 
+    Permission.INVENTORY_READ,
+    Permission.INVENTORY_ITEM_MANAGE,
+    Permission.INVENTORY_MOVEMENT_POST,
+    Permission.INVENTORY_LIFECYCLE_MANAGE,
+
     Permission.USER_READ,
     Permission.MEMBERSHIP_READ,
   ],
@@ -60,5 +70,7 @@ export const rolePermissions: Record<
     Permission.CUSTOMER_READ,
     Permission.SUPPLIER_READ,
     Permission.FARM_READ,
+    Permission.INVENTORY_READ,
+    Permission.INVENTORY_MOVEMENT_POST,
   ],
 };

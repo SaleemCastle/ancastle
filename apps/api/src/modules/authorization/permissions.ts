@@ -17,6 +17,11 @@ export const Permission = {
   SUPPLIER_UPDATE: 'supplier:update',
   SUPPLIER_DEACTIVATE: 'supplier:deactivate',
 
+  INVENTORY_READ: 'inventory:read',
+  INVENTORY_ITEM_MANAGE: 'inventory:item-manage',
+  INVENTORY_MOVEMENT_POST: 'inventory:movement-post',
+  INVENTORY_LIFECYCLE_MANAGE: 'inventory:lifecycle-manage',
+
   USER_READ: 'user:read',
   USER_CREATE: 'user:create',
   USER_UPDATE: 'user:update',
