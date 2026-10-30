@@ -8,6 +8,7 @@ import {
     Warehouse,
     ContactRound,
     Truck,
+    PackageOpen,
 } from 'lucide-react';
 import type { ApplicationOrganization } from '@ancastle/types';
 import { LogoutForm } from '@/components/logout-form';
@@ -165,6 +166,17 @@ export function ApplicationShell({
                             >
                                 <Warehouse className="size-4" aria-hidden="true" />
                                 Farms
+                            </Link>
+                        )}
+                        {current?.permissions.includes('inventory:read') && (
+                            <Link
+                                prefetch={false}
+                                aria-current={activePath === '/app/inventory' ? 'page' : undefined}
+                                href={applicationHref('/app/inventory', current.organization.id)}
+                                className={navigationClass('/app/inventory')}
+                            >
+                                <PackageOpen className="size-4" aria-hidden="true" />
+                                Inventory
                             </Link>
                         )}
                         {current?.permissions.includes('customer:read') && (
