@@ -1,4 +1,9 @@
-import { CUSTOMER_TYPES, INVENTORY_CATEGORIES, INVENTORY_UNITS } from '@ancastle/types';
+import {
+    CUSTOMER_TYPES,
+    INVENTORY_CATEGORIES,
+    INVENTORY_UNITS,
+    INVENTORY_MOVEMENT_REASONS,
+} from '@ancastle/types';
 import { z } from 'zod';
 
 export const healthStatusSchema = z.object({
@@ -178,6 +183,36 @@ export const updateInventoryItemSchema = z
 
 export const inventoryQuerySchema = masterDataQuerySchema;
 
+export const inventoryMovementQuantitySchema = z.coerce
+    .number()
+    .finite()
+    .refine((value) => value !== 0, {
+        message: 'Movement quantity must not be zero',
+    })
+    .refine((value) => Number.isInteger(value * 1000), {
+        message: 'Must have at most 3 decimal places',
+    });
+
+export const createInventoryMovementSchema = z
+    .object({
+        inventoryItemId: z.uuid(),
+        quantity: inventoryMovementQuantitySchema,
+        reason: z.enum(INVENTORY_MOVEMENT_REASONS),
+        occurredAt: z.coerce.date(),
+        note: optionalTextSchema(2000),
+        reference: optionalTextSchema(120),
+    })
+    .strict();
+
+export const inventoryMovementQuerySchema = z
+    .object({
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce.number().int().min(1).max(100).default(20),
+        inventoryItemId: z.uuid().optional(),
+        reason: z.enum(INVENTORY_MOVEMENT_REASONS).optional(),
+    })
+    .strict();
+
 export type HealthStatusInput = z.input<typeof healthStatusSchema>;
 export type HealthStatusOutput = z.output<typeof healthStatusSchema>;
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
@@ -191,6 +226,10 @@ export type MasterDataQuery = z.infer<typeof masterDataQuerySchema>;
 export type CreateInventoryItemInput = z.infer<typeof createInventoryItemSchema>;
 export type UpdateInventoryItemInput = z.infer<typeof updateInventoryItemSchema>;
 export type InventoryQuery = z.infer<typeof inventoryQuerySchema>;
+
+export type CreateInventoryMovementInput = z.infer<typeof createInventoryMovementSchema>;
+
+export type InventoryMovementQuery = z.infer<typeof inventoryMovementQuerySchema>;
 
 export * from './auth.js';
 export * from './organization-farm.js';

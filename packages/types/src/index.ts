@@ -106,6 +106,46 @@ export interface InventoryItemListResponse {
     };
 }
 
+export const INVENTORY_MOVEMENT_REASONS = ['RECEIPT', 'ISSUE', 'ADJUSTMENT'] as const;
+
+export type InventoryMovementReason = (typeof INVENTORY_MOVEMENT_REASONS)[number];
+
+export interface FarmInventoryItem {
+    item: InventoryItem;
+    stockOnHand: string;
+}
+
+export interface FarmInventoryResponse {
+    data: FarmInventoryItem[];
+}
+
+export interface InventoryMovement {
+    id: string;
+    farmId: string;
+    inventoryItemId: string;
+    actorUserId: string;
+    quantity: string;
+    reason: InventoryMovementReason;
+    occurredAt: string;
+    note: string | null;
+    reference: string | null;
+    createdAt: string;
+}
+
+export interface InventoryMovementResponse {
+    data: InventoryMovement;
+}
+
+export interface InventoryMovementListResponse {
+    data: InventoryMovement[];
+    meta: {
+        page: number;
+        pageSize: number;
+        totalItems: number;
+        totalPages: number;
+    };
+}
+
 export * from './api.js';
 export * from './auth.js';
 export * from './organization-farm.js';
