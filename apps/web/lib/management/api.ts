@@ -5,7 +5,7 @@ import { authConfig } from '../auth/config';
 import { AuthenticationRejectedError, AuthUnavailableError } from '../auth/errors';
 import { webSessions } from '../auth/sessions';
 import { z } from 'zod';
-import { CUSTOMER_TYPES } from '@ancastle/types';
+import { CUSTOMER_TYPES, INVENTORY_CATEGORIES, INVENTORY_UNITS } from '@ancastle/types';
 
 const messages: Record<string, string> = {
     ORGANIZATION_USER_NOT_FOUND: 'This resource is unavailable.',
@@ -22,6 +22,9 @@ const messages: Record<string, string> = {
     CUSTOMER_CODE_EXISTS: 'A customer with this code already exists in this organization.',
     SUPPLIER_NOT_FOUND: 'This resource is unavailable.',
     SUPPLIER_CODE_EXISTS: 'A supplier with this code already exists.',
+    INVENTORY_ITEM_NOT_FOUND: 'This resource is unavailable.',
+    INVENTORY_ITEM_CODE_EXISTS: 'An inventory item with this code already exists.',
+    INVENTORY_ITEM_CODE_LIMIT_REACHED: 'No additional inventory item codes are available.',
 };
 export class ManagementApiError extends Error {
     constructor(readonly code: string) {
@@ -50,6 +53,33 @@ export const customerResponseSchema = z.object({
 
 export const customerListResponseSchema = z.object({
     data: z.array(customerSchema),
+    meta: z.object({
+        page: z.number().int().min(1),
+        pageSize: z.number().int().min(1),
+        totalItems: z.number().int().min(0),
+        totalPages: z.number().int().min(0),
+    }),
+});
+
+const inventoryItemSchema = z.object({
+    id: z.uuid(),
+    code: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    unit: z.enum(INVENTORY_UNITS),
+    category: z.enum(INVENTORY_CATEGORIES),
+    lowStockThreshold: z.string().nullable(),
+    isActive: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+});
+
+export const inventoryItemResponseSchema = z.object({
+    data: inventoryItemSchema,
+});
+
+export const inventoryItemListResponseSchema = z.object({
+    data: z.array(inventoryItemSchema),
     meta: z.object({
         page: z.number().int().min(1),
         pageSize: z.number().int().min(1),
