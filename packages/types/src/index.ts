@@ -110,9 +110,14 @@ export const INVENTORY_MOVEMENT_REASONS = ['RECEIPT', 'ISSUE', 'ADJUSTMENT'] as 
 
 export type InventoryMovementReason = (typeof INVENTORY_MOVEMENT_REASONS)[number];
 
+export const INVENTORY_STOCK_STATUSES = ['HEALTHY', 'LOW', 'OUT_OF_STOCK', 'UNMONITORED'] as const;
+
+export type InventoryStockStatus = (typeof INVENTORY_STOCK_STATUSES)[number];
+
 export interface FarmInventoryItem {
     item: InventoryItem;
     stockOnHand: string;
+    stockStatus: InventoryStockStatus;
 }
 
 export interface FarmInventoryResponse {

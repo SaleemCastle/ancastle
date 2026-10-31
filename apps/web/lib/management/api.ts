@@ -10,6 +10,7 @@ import {
     INVENTORY_CATEGORIES,
     INVENTORY_UNITS,
     INVENTORY_MOVEMENT_REASONS,
+    INVENTORY_STOCK_STATUSES,
 } from '@ancastle/types';
 
 const messages: Record<string, string> = {
@@ -90,6 +91,7 @@ export const farmInventoryResponseSchema = z.object({
         z.object({
             item: inventoryItemSchema,
             stockOnHand: z.string(),
+            stockStatus: z.enum(INVENTORY_STOCK_STATUSES),
         }),
     ),
 });
