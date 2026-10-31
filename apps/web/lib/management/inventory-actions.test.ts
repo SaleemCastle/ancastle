@@ -234,7 +234,7 @@ describe('Inventory item management actions', () => {
                     inventoryItemId: inventoryItem,
                     quantity: -7.375,
                     reason: 'ISSUE',
-                    occurredAt: '2026-10-30T14:30:00.000Z',
+                    occurredAt: new Date('2026-10-30T09:30').toISOString(),
                     note: 'Morning feed usage',
                     reference: 'FEED-001',
                 }),
