@@ -5,7 +5,12 @@ import { authConfig } from '../auth/config';
 import { AuthenticationRejectedError, AuthUnavailableError } from '../auth/errors';
 import { webSessions } from '../auth/sessions';
 import { z } from 'zod';
-import { CUSTOMER_TYPES, INVENTORY_CATEGORIES, INVENTORY_UNITS } from '@ancastle/types';
+import {
+    CUSTOMER_TYPES,
+    INVENTORY_CATEGORIES,
+    INVENTORY_UNITS,
+    INVENTORY_MOVEMENT_REASONS,
+} from '@ancastle/types';
 
 const messages: Record<string, string> = {
     ORGANIZATION_USER_NOT_FOUND: 'This resource is unavailable.',
@@ -25,6 +30,8 @@ const messages: Record<string, string> = {
     INVENTORY_ITEM_NOT_FOUND: 'This resource is unavailable.',
     INVENTORY_ITEM_CODE_EXISTS: 'An inventory item with this code already exists.',
     INVENTORY_ITEM_CODE_LIMIT_REACHED: 'No additional inventory item codes are available.',
+    INVENTORY_SCOPE_NOT_FOUND: 'This inventory resource is unavailable.',
+    INSUFFICIENT_INVENTORY_STOCK: 'This movement would reduce stock below zero.',
 };
 export class ManagementApiError extends Error {
     constructor(readonly code: string) {
@@ -61,7 +68,7 @@ export const customerListResponseSchema = z.object({
     }),
 });
 
-const inventoryItemSchema = z.object({
+export const inventoryItemSchema = z.object({
     id: z.uuid(),
     code: z.string(),
     name: z.string(),
@@ -76,6 +83,42 @@ const inventoryItemSchema = z.object({
 
 export const inventoryItemResponseSchema = z.object({
     data: inventoryItemSchema,
+});
+
+export const farmInventoryResponseSchema = z.object({
+    data: z.array(
+        z.object({
+            item: inventoryItemSchema,
+            stockOnHand: z.string(),
+        }),
+    ),
+});
+
+export const inventoryMovementSchema = z.object({
+    id: z.uuid(),
+    farmId: z.uuid(),
+    inventoryItemId: z.uuid(),
+    actorUserId: z.uuid(),
+    quantity: z.string(),
+    reason: z.enum(INVENTORY_MOVEMENT_REASONS),
+    occurredAt: z.string(),
+    note: z.string().nullable(),
+    reference: z.string().nullable(),
+    createdAt: z.string(),
+});
+
+export const inventoryMovementResponseSchema = z.object({
+    data: inventoryMovementSchema,
+});
+
+export const inventoryMovementListResponseSchema = z.object({
+    data: z.array(inventoryMovementSchema),
+    meta: z.object({
+        page: z.number().int().min(1),
+        pageSize: z.number().int().min(1),
+        totalItems: z.number().int().min(0),
+        totalPages: z.number().int().min(0),
+    }),
 });
 
 export const inventoryItemListResponseSchema = z.object({

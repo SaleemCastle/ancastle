@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { postInventoryMovementAction } from '../../app/app/inventory/stock/actions';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fake = vi.hoisted(() => ({
@@ -41,6 +42,7 @@ import {
 
 const organization = randomUUID();
 const inventoryItem = randomUUID();
+const farm = randomUUID();
 
 function form(values: Record<string, string> = {}) {
     const result = new FormData();
@@ -61,6 +63,26 @@ function form(values: Record<string, string> = {}) {
     return result;
 }
 
+function movementForm(values: Record<string, string> = {}) {
+    const result = new FormData();
+
+    for (const [key, value] of Object.entries({
+        organization,
+        farm,
+        inventoryItemId: inventoryItem,
+        quantity: '-7.375',
+        reason: 'ISSUE',
+        occurredAt: '2026-10-30T09:30',
+        note: ' Morning feed usage ',
+        reference: ' FEED-001 ',
+        ...values,
+    })) {
+        result.set(key, value);
+    }
+
+    return result;
+}
+
 describe('Inventory item management actions', () => {
     beforeEach(() => {
         vi.resetAllMocks();
@@ -71,7 +93,11 @@ describe('Inventory item management actions', () => {
         fake.context.mockResolvedValue({
             current: {
                 organization: { id: organization },
-                permissions: ['inventory:item-manage', 'inventory:lifecycle-manage'],
+                permissions: [
+                    'inventory:item-manage',
+                    'inventory:lifecycle-manage',
+                    'inventory:movement-post',
+                ],
             },
         });
 
@@ -171,5 +197,65 @@ describe('Inventory item management actions', () => {
                 method: 'POST',
             },
         );
+    });
+
+    it('posts a signed farm inventory movement and refreshes farm stock', async () => {
+        fake.api.mockResolvedValueOnce({
+            data: {
+                id: randomUUID(),
+                farmId: farm,
+                inventoryItemId: inventoryItem,
+                actorUserId: randomUUID(),
+                quantity: '-7.375',
+                reason: 'ISSUE',
+                occurredAt: '2026-10-30T14:30:00.000Z',
+                note: 'Morning feed usage',
+                reference: 'FEED-001',
+                createdAt: '2026-10-30T14:31:00.000Z',
+            },
+        });
+
+        const result = await postInventoryMovementAction({}, movementForm());
+
+        expect(result).toEqual({
+            success: 'Inventory movement posted.',
+        });
+
+        expect(fake.context).toHaveBeenCalledWith({
+            organization,
+        });
+
+        expect(fake.api).toHaveBeenCalledWith(
+            'organizations/' + organization + '/farms/' + farm + '/inventory/movements',
+            expect.anything(),
+            {
+                method: 'POST',
+                body: JSON.stringify({
+                    inventoryItemId: inventoryItem,
+                    quantity: -7.375,
+                    reason: 'ISSUE',
+                    occurredAt: '2026-10-30T14:30:00.000Z',
+                    note: 'Morning feed usage',
+                    reference: 'FEED-001',
+                }),
+            },
+        );
+
+        expect(fake.revalidate).toHaveBeenCalledWith('/app/inventory/stock');
+    });
+
+    it('rejects a zero movement before calling the inventory API', async () => {
+        const result = await postInventoryMovementAction(
+            {},
+            movementForm({
+                quantity: '0',
+            }),
+        );
+
+        expect(result.success).toBeUndefined();
+        expect(result.error).toBeDefined();
+
+        expect(fake.api).not.toHaveBeenCalled();
+        expect(fake.revalidate).not.toHaveBeenCalled();
     });
 });

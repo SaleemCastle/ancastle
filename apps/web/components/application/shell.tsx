@@ -61,7 +61,7 @@ export function ApplicationShell({
 
                     <div className="mt-7 space-y-4">
                         {organizations.length > 1 && (
-                            <form action="/app/dashboard" className="space-y-2">
+                            <form action={activePath} className="space-y-2">
                                 <label
                                     htmlFor="organization-selection"
                                     className="block px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -91,7 +91,7 @@ export function ApplicationShell({
                         {current && (
                             <section aria-label="Farm context" className="space-y-2">
                                 {current.farms.length > 1 ? (
-                                    <form action="/app/dashboard" className="space-y-2">
+                                    <form action={activePath} className="space-y-2">
                                         <input
                                             type="hidden"
                                             name="organization"
@@ -169,15 +169,42 @@ export function ApplicationShell({
                             </Link>
                         )}
                         {current?.permissions.includes('inventory:read') && (
-                            <Link
-                                prefetch={false}
-                                aria-current={activePath === '/app/inventory' ? 'page' : undefined}
-                                href={applicationHref('/app/inventory', current.organization.id)}
-                                className={navigationClass('/app/inventory')}
-                            >
-                                <PackageOpen className="size-4" aria-hidden="true" />
-                                Inventory
-                            </Link>
+                            <>
+                                <Link
+                                    prefetch={false}
+                                    aria-current={
+                                        activePath === '/app/inventory' ? 'page' : undefined
+                                    }
+                                    href={applicationHref(
+                                        '/app/inventory',
+                                        current.organization.id,
+                                    )}
+                                    className={navigationClass('/app/inventory')}
+                                >
+                                    <PackageOpen className="size-4" aria-hidden="true" />
+                                    Inventory items
+                                </Link>
+
+                                {farm && (
+                                    <Link
+                                        prefetch={false}
+                                        aria-current={
+                                            activePath === '/app/inventory/stock'
+                                                ? 'page'
+                                                : undefined
+                                        }
+                                        href={applicationHref(
+                                            '/app/inventory/stock',
+                                            current.organization.id,
+                                            farm.id,
+                                        )}
+                                        className={navigationClass('/app/inventory/stock')}
+                                    >
+                                        <Warehouse className="size-4" aria-hidden="true" />
+                                        Farm stock
+                                    </Link>
+                                )}
+                            </>
                         )}
                         {current?.permissions.includes('customer:read') && (
                             <Link
