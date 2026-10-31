@@ -30,6 +30,43 @@ function displayReason(reason: string) {
     }
 }
 
+function stockStatusDetails(status: string) {
+    switch (status) {
+        case 'HEALTHY':
+            return {
+                label: 'Healthy',
+                className:
+                    'border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300',
+            };
+
+        case 'LOW':
+            return {
+                label: 'Low stock',
+                className:
+                    'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300',
+            };
+
+        case 'OUT_OF_STOCK':
+            return {
+                label: 'Out of stock',
+                className:
+                    'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300',
+            };
+
+        case 'UNMONITORED':
+            return {
+                label: 'Not monitored',
+                className: 'border-border bg-muted text-muted-foreground',
+            };
+
+        default:
+            return {
+                label: status,
+                className: 'border-border bg-muted text-muted-foreground',
+            };
+    }
+}
+
 function displayDate(value: string) {
     return new Intl.DateTimeFormat('en-JM', {
         dateStyle: 'medium',
@@ -108,6 +145,18 @@ export default function FarmStockPage({
 
                 const canPost = current.permissions.includes('inventory:movement-post');
 
+                const requestedStockStatus =
+                    typeof search.stockStatus === 'string' ? search.stockStatus : undefined;
+
+                const stockStatus =
+                    requestedStockStatus === 'LOW' || requestedStockStatus === 'OUT_OF_STOCK'
+                        ? requestedStockStatus
+                        : undefined;
+
+                const visibleStock = stockStatus
+                    ? stock.data.filter((entry) => entry.stockStatus === stockStatus)
+                    : stock.data;
+
                 const pageHref = (page: number) => {
                     const value = new URLSearchParams(movementParams);
 
@@ -152,6 +201,44 @@ export default function FarmStockPage({
                         </section>
 
                         <section className="space-y-4">
+                            <form
+                                action="/app/inventory/stock"
+                                className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4"
+                            >
+                                <input
+                                    type="hidden"
+                                    name="organization"
+                                    value={current.organization.id}
+                                />
+
+                                <input type="hidden" name="farm" value={farm.id} />
+
+                                <div>
+                                    <label
+                                        htmlFor="stock-status-filter"
+                                        className="mb-2 block text-sm font-medium"
+                                    >
+                                        Stock status
+                                    </label>
+
+                                    <select
+                                        id="stock-status-filter"
+                                        name="stockStatus"
+                                        defaultValue={stockStatus ?? ''}
+                                        className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                                    >
+                                        <option value="">All stock</option>
+
+                                        <option value="LOW">Low stock</option>
+
+                                        <option value="OUT_OF_STOCK">Out of stock</option>
+                                    </select>
+                                </div>
+
+                                <Button type="submit" variant="outline" className="px-3 h-10">
+                                    Apply filter
+                                </Button>
+                            </form>
                             <div>
                                 <h2 className="text-lg font-semibold">Current stock</h2>
 
@@ -160,13 +247,18 @@ export default function FarmStockPage({
                                 </p>
                             </div>
 
-                            {stock.data.length === 0 ? (
+                            {visibleStock.length === 0 ? (
                                 <div className="rounded-xl border bg-card p-6">
-                                    <p className="font-medium">No inventory items available.</p>
+                                    <p className="font-medium">
+                                        {stock.data.length === 0
+                                            ? 'No inventory items available.'
+                                            : 'No inventory items match this stock status.'}
+                                    </p>
 
                                     <p className="mt-1 text-sm text-muted-foreground">
-                                        Create an inventory item before posting farm stock
-                                        movements.
+                                        {stock.data.length === 0
+                                            ? 'Create an inventory item before posting farm stock movements.'
+                                            : 'Try another stock status or view all stock.'}
                                     </p>
                                 </div>
                             ) : (
@@ -179,37 +271,64 @@ export default function FarmStockPage({
                                                 <th className="px-4 py-3 font-medium">Stock</th>
                                                 <th className="px-4 py-3 font-medium">Threshold</th>
                                                 <th className="px-4 py-3 font-medium">Status</th>
+                                                <th className="px-4 py-3 font-medium">
+                                                    Item status
+                                                </th>
                                             </tr>
                                         </thead>
 
                                         <tbody>
-                                            {stock.data.map(({ item, stockOnHand }) => (
-                                                <tr
-                                                    key={item.id}
-                                                    className="border-b last:border-b-0"
-                                                >
-                                                    <td className="px-4 py-3">
-                                                        <p className="font-medium">{item.name}</p>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            {item.code}
-                                                        </p>
-                                                    </td>
+                                            {visibleStock.map(
+                                                ({ item, stockOnHand, stockStatus }) => {
+                                                    const status = stockStatusDetails(stockStatus);
 
-                                                    <td className="px-4 py-3">{item.unit}</td>
+                                                    return (
+                                                        <tr
+                                                            key={item.id}
+                                                            className="border-b last:border-b-0"
+                                                        >
+                                                            <td className="px-4 py-3">
+                                                                <p className="font-medium">
+                                                                    {item.name}
+                                                                </p>
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    {item.code}
+                                                                </p>
+                                                            </td>
 
-                                                    <td className="px-4 py-3 font-medium tabular-nums">
-                                                        {stockOnHand}
-                                                    </td>
+                                                            <td className="px-4 py-3">
+                                                                {item.unit}
+                                                            </td>
 
-                                                    <td className="px-4 py-3 tabular-nums">
-                                                        {item.lowStockThreshold ?? 'Not set'}
-                                                    </td>
+                                                            <td className="px-4 py-3 font-medium tabular-nums">
+                                                                {stockOnHand}
+                                                            </td>
 
-                                                    <td className="px-4 py-3">
-                                                        {item.isActive ? 'Active' : 'Inactive'}
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                                            <td className="px-4 py-3 tabular-nums">
+                                                                {item.lowStockThreshold ??
+                                                                    'Not set'}
+                                                            </td>
+
+                                                            <td className="px-4 py-3">
+                                                                <span
+                                                                    className={
+                                                                        'inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium ' +
+                                                                        status.className
+                                                                    }
+                                                                >
+                                                                    {status.label}
+                                                                </span>
+                                                            </td>
+
+                                                            <td className="px-4 py-3">
+                                                                {item.isActive
+                                                                    ? 'Active'
+                                                                    : 'Inactive'}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                },
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>

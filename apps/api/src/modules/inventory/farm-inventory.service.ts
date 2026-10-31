@@ -3,6 +3,7 @@ import type {
   FarmInventoryResponse,
   InventoryMovement,
   InventoryMovementListResponse,
+  InventoryStockStatus,
 } from '@ancastle/types';
 import type { InventoryMovementQuery } from '@ancastle/validation';
 
@@ -35,6 +36,25 @@ function movementDetails(record: MovementRecord): InventoryMovement {
     occurredAt: record.occurredAt.toISOString(),
     createdAt: record.createdAt.toISOString(),
   };
+}
+
+function inventoryStockStatus(
+  stockOnHand: Prisma.Decimal,
+  lowStockThreshold: Prisma.Decimal | null,
+): InventoryStockStatus {
+  if (stockOnHand.isZero()) {
+    return 'OUT_OF_STOCK';
+  }
+
+  if (lowStockThreshold === null) {
+    return 'UNMONITORED';
+  }
+
+  if (stockOnHand.lessThanOrEqualTo(lowStockThreshold)) {
+    return 'LOW';
+  }
+
+  return 'HEALTHY';
 }
 
 @Injectable()
@@ -75,15 +95,23 @@ export class FarmInventoryService {
     );
 
     return {
-      data: items.map((item) => ({
-        item: {
-          ...item,
-          lowStockThreshold: item.lowStockThreshold?.toString() ?? null,
-          createdAt: item.createdAt.toISOString(),
-          updatedAt: item.updatedAt.toISOString(),
-        },
-        stockOnHand: balanceByItem.get(item.id)?.toString() ?? '0',
-      })),
+      data: items.map((item) => {
+        const stockOnHand = balanceByItem.get(item.id) ?? new Prisma.Decimal(0);
+
+        return {
+          item: {
+            ...item,
+            lowStockThreshold: item.lowStockThreshold?.toString() ?? null,
+            createdAt: item.createdAt.toISOString(),
+            updatedAt: item.updatedAt.toISOString(),
+          },
+          stockOnHand: stockOnHand.toString(),
+          stockStatus: inventoryStockStatus(
+            stockOnHand,
+            item.lowStockThreshold,
+          ),
+        };
+      }),
     };
   }
 
