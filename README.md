@@ -1912,3 +1912,312 @@ above, then generate the Prisma client and apply all committed migrations:
 pnpm --filter @ancastle/api db:generate
 pnpm --filter @ancastle/api db:migrate:deploy
 ```
+
+## Inventory
+
+Inventory uses a ledger-oriented model with a deliberate separation between
+organization-owned item definitions and farm-scoped physical stock.
+
+```text
+Organization
+    │
+    └── Inventory Item
+            │
+            ├── Farm A → Inventory Movements → Derived Stock
+            │
+            └── Farm B → Inventory Movements → Derived Stock
+```
+
+An `InventoryItem` defines reusable organization-level information such as the
+item code, name, unit, category and low-stock threshold. It does not store the
+authoritative quantity on hand and does not belong to an individual Farm.
+
+Physical stock is farm-scoped. The same organization-owned item can therefore
+exist operationally across multiple permitted farms while each farm maintains
+an independent stock balance.
+
+Stock-on-hand is derived from the immutable inventory movement ledger:
+
+```text
+stockOnHand = SUM(movement.quantity)
+```
+
+Positive movement quantities add stock and negative quantities remove stock.
+A zero movement is invalid.
+
+Posted movements are historical business events and are not edited or deleted.
+If an inventory error must be corrected, the correction is represented by a
+new compensating `ADJUSTMENT` movement rather than modifying the original
+ledger entry.
+
+The service prevents a movement from producing a negative stock balance.
+Concurrency-sensitive movement posting is serialized for the affected stock
+position so concurrent requests cannot independently pass the stock check and
+overdraw the same inventory.
+
+Low-stock state is calculated from the derived farm balance and the
+organization-owned item's configured low-stock threshold. The balance itself
+is never maintained as a client-calculated or directly editable source of
+truth.
+
+---
+
+# M3 Inventory Foundation
+
+M3 establishes the inventory foundation for Ancastle Farms using
+organization-owned inventory definitions, farm-scoped physical stock and an
+immutable movement ledger.
+
+The inventory architecture intentionally separates item identity from physical
+stock. An Inventory Item belongs to an Organization and may be used by multiple
+Farms within that organization. Each Farm's stock balance remains independent
+and is derived exclusively from movements posted for that Farm.
+
+## Inventory Ownership Model
+
+Inventory Items are organization-level master data.
+
+They contain:
+
+- Server-generated item code
+- Name
+- Description
+- Unit
+- Category
+- Low-stock threshold
+- Lifecycle state
+
+They do not contain a `farmId` or an authoritative quantity-on-hand field.
+
+Physical inventory is farm-scoped through Inventory Movements. Every movement
+belongs to both the verified Organization and selected Farm and references an
+Inventory Item belonging to that Organization.
+
+This allows one organization-owned item definition to be used across multiple
+farms without duplicating the item while preventing balances from leaking
+between farms.
+
+## Inventory Movement Ledger
+
+Inventory Movements are immutable ledger entries.
+
+A movement records:
+
+- Farm
+- Inventory Item
+- Acting user
+- Signed quantity
+- Reason
+- Occurred date
+- Optional note
+- Optional reference
+- Creation timestamp
+
+Supported reasons are:
+
+- `RECEIPT`
+- `ISSUE`
+- `ADJUSTMENT`
+
+Movement direction is determined by the signed quantity rather than the reason:
+
+```text
+quantity > 0  → stock enters the farm
+quantity < 0  → stock leaves the farm
+quantity = 0  → invalid
+```
+
+The reason describes why the movement occurred.
+
+Posted movements are not updated or deleted through the public API. Corrections
+are made by posting a compensating `ADJUSTMENT` movement, preserving the
+original event and the audit trail.
+
+## Derived Stock-on-Hand
+
+Stock-on-hand is not stored as an editable authoritative field.
+
+For an Inventory Item within a Farm:
+
+```text
+stockOnHand = SUM(inventoryMovement.quantity)
+```
+
+The API derives the current balance from the movement ledger.
+
+Outbound movements that would make the resulting balance negative are rejected.
+Movement posting protects the affected stock position against concurrent
+updates so simultaneous outbound requests cannot independently overdraw the
+same inventory.
+
+The frontend displays the server-derived balance and never calculates an
+authoritative stock balance independently.
+
+## Low-Stock Status
+
+An Inventory Item may define an organization-level low-stock threshold.
+
+Stock status is derived by the backend from the Farm's current stock balance
+and the Inventory Item's configured threshold:
+
+| Status         | Condition                                                               |
+| -------------- | ----------------------------------------------------------------------- |
+| `OUT_OF_STOCK` | Stock-on-hand equals zero                                               |
+| `LOW`          | A threshold is configured and stock-on-hand is less than or equal to it |
+| `HEALTHY`      | A threshold is configured and stock-on-hand is greater than it          |
+| `UNMONITORED`  | No threshold is configured and stock-on-hand is greater than zero       |
+
+`OUT_OF_STOCK` takes precedence when the balance is zero, including when no
+low-stock threshold is configured.
+
+Stock status is derived rather than persisted as a second source of truth.
+
+Because the threshold belongs to the Inventory Item while the balance belongs
+to the Farm's movement ledger, the same item may have a different stock status
+at different Farms.
+
+## Inventory Permissions
+
+The central authorization policy defines four inventory permissions:
+
+| Permission                   | Purpose                                               |
+| ---------------------------- | ----------------------------------------------------- |
+| `inventory:read`             | View inventory items, farm stock and movement history |
+| `inventory:item-manage`      | Create and update organization-owned Inventory Items  |
+| `inventory:movement-post`    | Post inventory movements                              |
+| `inventory:lifecycle-manage` | Deactivate and reactivate Inventory Items             |
+
+OWNER, ADMIN and MANAGER roles receive all four permissions.
+
+STAFF can read inventory and post permitted movements but cannot manage item
+definitions or item lifecycle.
+
+Farm authorization remains a separate boundary. Having an inventory permission
+does not grant access to an otherwise inaccessible Farm.
+
+The frontend hides controls the current application context does not permit,
+but NestJS guards and verified organization/farm context remain authoritative.
+
+## Inventory Item API
+
+Inventory Item management is organization-scoped:
+
+| Method | Route under `/api/organizations/:organizationId` | Purpose                      |
+| ------ | ------------------------------------------------ | ---------------------------- |
+| GET    | `/inventory-items`                               | List Inventory Items         |
+| POST   | `/inventory-items`                               | Create an Inventory Item     |
+| GET    | `/inventory-items/:inventoryItemId`              | Read an Inventory Item       |
+| PATCH  | `/inventory-items/:inventoryItemId`              | Update an Inventory Item     |
+| POST   | `/inventory-items/:inventoryItemId/deactivate`   | Deactivate an Inventory Item |
+| POST   | `/inventory-items/:inventoryItemId/reactivate`   | Reactivate an Inventory Item |
+
+Organization ownership, generated code and lifecycle state cannot be supplied
+or replaced through normal create/update payloads.
+
+## Farm Inventory API
+
+Operational inventory routes require both verified organization and farm
+context:
+
+| Method | Route under `/api/organizations/:organizationId/farms/:farmId/inventory` | Purpose                    |
+| ------ | ------------------------------------------------------------------------ | -------------------------- |
+| GET    | `/`                                                                      | View derived Farm stock    |
+| GET    | `/movements`                                                             | View movement history      |
+| POST   | `/movements`                                                             | Post an Inventory Movement |
+
+Movement history supports pagination and filtering while remaining constrained
+to the verified Organization and Farm.
+
+There are intentionally no public PATCH or DELETE movement endpoints.
+
+## Inventory Web Workflow
+
+Inventory management is available through the authenticated application shell.
+
+Organization-level Inventory Item management allows authorized users to create,
+view, update, deactivate and reactivate reusable item definitions.
+
+The operational stock view requires a selected accessible Farm. Switching the
+Farm through the existing application context reloads stock and movement data
+for that verified Farm rather than treating the UI selection as authorization.
+
+The Farm inventory view shows server-derived stock, item metadata, lifecycle
+state and low-stock state. Authorized users can post receipts, issues and
+adjustments and review immutable movement history.
+
+Movement history displays the movement reason, signed quantity, occurrence
+date, actor information and available notes/reference information.
+
+The movement workflow does not expose edit or delete controls for posted
+history. Corrections are represented as additional adjustment entries.
+
+## Tenant and Farm Isolation
+
+Inventory Item definitions are constrained by verified organization ownership.
+
+Farm stock and movements are constrained by both verified organization and
+verified farm context.
+
+An Inventory Item belonging to one Organization cannot be posted into another
+Organization's Farm.
+
+Within one Organization, the same Inventory Item can be used by multiple
+permitted Farms while each Farm's movement ledger and derived balance remain
+independent.
+
+Existing M1 organization and farm authorization infrastructure remains
+responsible for establishing trusted request context. Inventory services build
+on those boundaries rather than trusting organization, farm, role or permission
+claims supplied by clients.
+
+## M3 Validation
+
+M3 validation covers the complete inventory workflow:
+
+1. Authenticate and enter an authorized organization workspace.
+2. Create and manage an organization-owned Inventory Item.
+3. Verify Inventory Item lifecycle behavior.
+4. Select an assigned Farm.
+5. View that Farm's server-derived inventory balance.
+6. Post a positive receipt movement and verify the balance increases.
+7. Post an outbound issue movement and verify the balance decreases.
+8. Verify an outbound movement cannot produce negative stock.
+9. Post an adjustment and verify the ledger-derived balance.
+10. Review immutable movement history.
+11. Verify corrections use compensating movements rather than editing history.
+12. Verify low-stock and out-of-stock state from the derived Farm balance.
+13. Switch between permitted Farms and verify their balances remain independent.
+14. Verify an unassigned or foreign Farm cannot be used for operational inventory.
+15. Verify another Organization's Inventory Item cannot be discovered or posted
+    into the selected Farm.
+16. Verify inventory controls respect the central permission policy.
+17. Verify the workflow remains usable on mobile and desktop layouts.
+
+Existing M1 coverage remains responsible for the underlying authentication,
+organization membership and farm-assignment security boundaries. M3 inventory
+coverage validates the inventory-specific ledger, stock, tenant and farm
+invariants without duplicating those established tests.
+
+## M3 Setup and Verification
+
+For a fresh environment, install dependencies, configure the environment and
+start PostgreSQL and Redis as described in the local development instructions.
+
+Generate the Prisma client and apply all committed migrations:
+
+```bash
+pnpm --filter @ancastle/api db:generate
+pnpm --filter @ancastle/api db:migrate:deploy
+```
+
+Run the repository quality gates:
+
+```bash
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+All checks must pass before M3 is considered complete.
