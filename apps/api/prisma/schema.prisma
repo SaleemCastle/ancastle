@@ -47,6 +47,7 @@ model Organization {
   suppliers               Supplier[]
   inventoryItems          InventoryItem[]
   inventoryMovements      InventoryMovement[]
+  flocks                  Flock[]
 
   @@map("organizations")
 }
@@ -64,6 +65,7 @@ model Farm {
 
   accessAssignments  FarmAccessAssignment[]
   inventoryMovements InventoryMovement[]
+  flocks             Flock[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -257,4 +259,32 @@ enum InventoryMovementReason {
   RECEIPT
   ISSUE
   ADJUSTMENT
+}
+
+// A biological placement batch; live population is derived from mortality history.
+model Flock {
+  id                   String    @id @default(uuid()) @db.Uuid
+  organizationId       String    @db.Uuid
+  farmId               String    @db.Uuid
+  // Allocated server-side by the creation workflow, like M2/M3 master-data codes.
+  code                 String
+  name                 String
+  birdType             String?
+  placementDate        DateTime  @db.Date
+  startingBirdCount    Int
+  expectedMaturityDate DateTime? @db.Date
+  notes                String?
+  // false means closed; closing preserves the flock and its placement population.
+  isActive             Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm         Farm         @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organizationId, farmId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId, farmId, isActive])
+  @@index([organizationId, farmId, placementDate])
+  @@map("flocks")
 }
