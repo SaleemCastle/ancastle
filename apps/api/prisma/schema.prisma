@@ -48,6 +48,7 @@ model Organization {
   inventoryItems          InventoryItem[]
   inventoryMovements      InventoryMovement[]
   flocks                  Flock[]
+  mortalityEvents         MortalityEvent[]
 
   @@map("organizations")
 }
@@ -66,6 +67,7 @@ model Farm {
   accessAssignments  FarmAccessAssignment[]
   inventoryMovements InventoryMovement[]
   flocks             Flock[]
+  mortalityEvents    MortalityEvent[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -92,6 +94,7 @@ model User {
   memberships        OrganizationMembership[]
   authSessions       AuthSession[]
   inventoryMovements InventoryMovement[]
+  mortalityEvents    MortalityEvent[]
 
   @@map("users")
 }
@@ -110,6 +113,7 @@ model OrganizationMembership {
   user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   farmAccessAssignments FarmAccessAssignment[]
+  mortalityEvents       MortalityEvent[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, userId])
@@ -279,12 +283,49 @@ model Flock {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  farm         Farm         @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm            Farm             @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  mortalityEvents MortalityEvent[]
 
   @@unique([organizationId, farmId, id])
   @@unique([organizationId, code])
   @@index([organizationId, farmId, isActive])
   @@index([organizationId, farmId, placementDate])
   @@map("flocks")
+}
+
+// Append-only poultry history, separate from inventory. Database triggers forbid
+// UPDATE/DELETE/TRUNCATE. Corrections append one full reversal, then (if needed)
+// a replacement death event. All counts stay positive; reversals subtract their
+// count when mortality is derived. A reversal cannot itself be reversed.
+model MortalityEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @db.Uuid
+  farmId          String   @db.Uuid
+  flockId         String   @db.Uuid
+  actorUserId     String   @db.Uuid
+  deathCount      Int
+  occurredAt      DateTime
+  createdAt       DateTime @default(now())
+  cause           String?
+  note            String?
+  reference       String?
+  reversesEventId String?  @unique @db.Uuid
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm         Farm         @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  flock        Flock        @relation(fields: [organizationId, farmId, flockId], references: [organizationId, farmId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser    User         @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  // Preserve organization membership attribution as well as global user identity.
+  // Membership may later be deactivated without rewriting historical events.
+  actorMembership OrganizationMembership @relation(fields: [organizationId, actorUserId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+
+  reversesEvent MortalityEvent?  @relation("MortalityReversal", fields: [organizationId, farmId, flockId, reversesEventId], references: [organizationId, farmId, flockId, id], onDelete: Restrict, onUpdate: Restrict)
+  reversals     MortalityEvent[] @relation("MortalityReversal")
+
+  @@unique([organizationId, farmId, flockId, id])
+  @@index([organizationId, farmId, flockId, occurredAt])
+  @@index([actorUserId])
+  @@map("mortality_events")
 }
