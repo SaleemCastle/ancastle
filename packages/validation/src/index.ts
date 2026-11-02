@@ -5,6 +5,7 @@ import {
     INVENTORY_MOVEMENT_REASONS,
 } from '@ancastle/types';
 import { z } from 'zod';
+import { activeStatusQuerySchema, paginationQuerySchema } from './pagination.js';
 
 export const healthStatusSchema = z.object({
     status: z.enum(['ok', 'error']),
@@ -182,6 +183,72 @@ export const updateInventoryItemSchema = z
     });
 
 export const inventoryQuerySchema = masterDataQuerySchema;
+
+// Dates stay as real YYYY-MM-DD calendar strings, matching Flock's PostgreSQL DATE
+// columns. Do not coerce timestamps/Date objects or apply timezone conversion.
+const flockDateSchema = z.iso.date();
+const startingBirdCountSchema = z.number().int().min(1).max(2_147_483_647);
+
+const flockFields = {
+    name: requiredNameSchema,
+    birdType: optionalTextSchema(120),
+    placementDate: flockDateSchema,
+    startingBirdCount: startingBirdCountSchema,
+    expectedMaturityDate: z.preprocess(blankToUndefined, flockDateSchema.optional()),
+    notes: optionalTextSchema(2000),
+};
+
+function validFlockDates(data: {
+    placementDate?: string;
+    expectedMaturityDate?: string | null;
+}): boolean {
+    return (
+        !data.placementDate ||
+        !data.expectedMaturityDate ||
+        data.expectedMaturityDate >= data.placementDate
+    );
+}
+
+const flockDateOrderError = {
+    message: 'Expected maturity date must be on or after placement date',
+    path: ['expectedMaturityDate'],
+};
+
+export const createFlockSchema = z
+    .object(flockFields)
+    .strict()
+    .refine(validFlockDates, flockDateOrderError);
+
+// A one-date PATCH cannot validate against a missing persisted counterpart.
+// The consuming service must validate the merged dates before persistence.
+export const updateFlockSchema = z
+    .object({
+        ...flockFields,
+        birdType: nullableTextSchema(120),
+        expectedMaturityDate: z.preprocess(blankToNull, flockDateSchema.nullable()),
+        notes: nullableTextSchema(2000),
+    })
+    .partial()
+    .strict()
+    .refine((data) => Object.keys(data).length > 0, {
+        message: 'At least one field must be provided',
+    })
+    .refine(validFlockDates, flockDateOrderError);
+
+// Search is intended for code/name/bird-type text. birdType is an exact label
+// filter, not an enum. isActive=false selects closed flocks; omission means all.
+// Organization and farm scope must come from verified context, not this query.
+export const flockQuerySchema = paginationQuerySchema
+    .extend({
+        search: optionalTextSchema(120),
+        birdType: optionalTextSchema(120),
+        isActive: activeStatusQuerySchema.optional(),
+    })
+    .strict();
+
+export type CreateFlockInput = z.infer<typeof createFlockSchema>;
+export type UpdateFlockInput = z.infer<typeof updateFlockSchema>;
+export type FlockQuery = z.infer<typeof flockQuerySchema>;
 
 export const inventoryMovementQuantitySchema = z.coerce
     .number()
