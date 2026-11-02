@@ -49,6 +49,7 @@ model Organization {
   inventoryMovements      InventoryMovement[]
   flocks                  Flock[]
   mortalityEvents         MortalityEvent[]
+  feedUsages              FeedUsage[]
 
   @@map("organizations")
 }
@@ -68,6 +69,7 @@ model Farm {
   inventoryMovements InventoryMovement[]
   flocks             Flock[]
   mortalityEvents    MortalityEvent[]
+  feedUsages         FeedUsage[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -95,6 +97,7 @@ model User {
   authSessions       AuthSession[]
   inventoryMovements InventoryMovement[]
   mortalityEvents    MortalityEvent[]
+  feedUsages         FeedUsage[]
 
   @@map("users")
 }
@@ -114,6 +117,7 @@ model OrganizationMembership {
 
   farmAccessAssignments FarmAccessAssignment[]
   mortalityEvents       MortalityEvent[]
+  feedUsages            FeedUsage[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, userId])
@@ -225,6 +229,7 @@ model InventoryItem {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   inventoryMovements InventoryMovement[]
+  feedUsages         FeedUsage[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -252,6 +257,9 @@ model InventoryMovement {
   inventoryItem InventoryItem @relation(fields: [organizationId, inventoryItemId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   actorUser     User          @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
+  feedUsages FeedUsage[]
+
+  @@unique([organizationId, farmId, inventoryItemId, id])
   @@index([organizationId, farmId, inventoryItemId, occurredAt])
   @@index([organizationId, inventoryItemId])
   @@index([actorUserId])
@@ -286,6 +294,7 @@ model Flock {
   organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   farm            Farm             @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   mortalityEvents MortalityEvent[]
+  feedUsages      FeedUsage[]
 
   @@unique([organizationId, farmId, id])
   @@unique([organizationId, code])
@@ -328,4 +337,40 @@ model MortalityEvent {
   @@index([organizationId, farmId, flockId, occurredAt])
   @@index([actorUserId])
   @@map("mortality_events")
+}
+
+// Operational explanation of consumption, never a separate feed-stock balance.
+// Normal usage links to a negative ISSUE. A full reversal keeps quantity positive
+// and links to a positive ADJUSTMENT; a replacement is a new ordinary usage.
+model FeedUsage {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @db.Uuid
+  farmId              String   @db.Uuid
+  flockId             String   @db.Uuid
+  inventoryItemId     String   @db.Uuid
+  actorUserId         String   @db.Uuid
+  inventoryMovementId String   @unique @db.Uuid
+  quantity            Decimal  @db.Decimal(18, 3)
+  occurredAt          DateTime
+  createdAt           DateTime @default(now())
+  note                String?
+  reference           String?
+  reversesUsageId     String?  @unique @db.Uuid
+
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm              Farm                   @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  flock             Flock                  @relation(fields: [organizationId, farmId, flockId], references: [organizationId, farmId, id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem     InventoryItem          @relation(fields: [organizationId, inventoryItemId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser         User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership   OrganizationMembership @relation(fields: [organizationId, actorUserId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+  inventoryMovement InventoryMovement      @relation(fields: [organizationId, farmId, inventoryItemId, inventoryMovementId], references: [organizationId, farmId, inventoryItemId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  reversesUsage FeedUsage?  @relation("FeedUsageReversal", fields: [organizationId, farmId, flockId, inventoryItemId, reversesUsageId], references: [organizationId, farmId, flockId, inventoryItemId, id], onDelete: Restrict, onUpdate: Restrict)
+  reversals     FeedUsage[] @relation("FeedUsageReversal")
+
+  @@unique([organizationId, farmId, flockId, inventoryItemId, id])
+  @@index([organizationId, farmId, flockId, occurredAt])
+  @@index([organizationId, inventoryItemId])
+  @@index([actorUserId])
+  @@map("feed_usages")
 }

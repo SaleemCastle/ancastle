@@ -10,6 +10,16 @@ export interface FarmStockItem {
   stockOnHand: Prisma.Decimal;
 }
 
+export interface PostInventoryMovementInput {
+  farmId: string;
+  inventoryItemId: string;
+  quantity: Prisma.Decimal;
+  reason: 'RECEIPT' | 'ISSUE' | 'ADJUSTMENT';
+  occurredAt: Date;
+  note?: string;
+  reference?: string;
+}
+
 @Injectable()
 export class InventoryStockService {
   constructor(private readonly prisma: PrismaService) {}
@@ -88,15 +98,21 @@ export class InventoryStockService {
 
   async postMovement(
     context: OrganizationContext,
-    input: {
-      farmId: string;
-      inventoryItemId: string;
-      quantity: Prisma.Decimal;
-      reason: 'RECEIPT' | 'ISSUE' | 'ADJUSTMENT';
-      occurredAt: Date;
-      note?: string;
-      reference?: string;
-    },
+    input: PostInventoryMovementInput,
+  ) {
+    return this.prisma.$transaction((tx) =>
+      this.postMovementInTransaction(tx, context, input),
+    );
+  }
+
+  /** Internal domain composition: caller owns commit/rollback and must propagate
+   * failures. The stock-position lock is held until that transaction ends.
+   * Use READ COMMITTED, as the ordinary postMovement entry point does.
+   */
+  async postMovementInTransaction(
+    tx: Prisma.TransactionClient,
+    context: OrganizationContext,
+    input: PostInventoryMovementInput,
   ) {
     if (input.quantity.isZero()) {
       throw new BusinessException(
@@ -105,62 +121,60 @@ export class InventoryStockService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      await this.verifyOwnership(
-        tx,
-        context.organizationId,
-        input.farmId,
-        input.inventoryItemId,
-      );
+    await this.verifyOwnership(
+      tx,
+      context.organizationId,
+      input.farmId,
+      input.inventoryItemId,
+    );
 
-      // Serialize movement posting for this farm/item combination.
-      //
-      // PostgreSQL advisory transaction locks avoid maintaining a separate
-      // mutable balance row purely for locking purposes.
-      await tx.$executeRaw(
-        Prisma.sql`
+    // Serialize movement posting for this farm/item combination.
+    //
+    // PostgreSQL advisory transaction locks avoid maintaining a separate
+    // mutable balance row purely for locking purposes.
+    await tx.$executeRaw(
+      Prisma.sql`
           SELECT pg_advisory_xact_lock(
             hashtext(${context.organizationId}),
             hashtext(${`${input.farmId}:${input.inventoryItemId}`})
           )
         `,
+    );
+
+    const balance = await tx.inventoryMovement.aggregate({
+      where: {
+        organizationId: context.organizationId,
+        farmId: input.farmId,
+        inventoryItemId: input.inventoryItemId,
+      },
+      _sum: {
+        quantity: true,
+      },
+    });
+
+    const currentStock = balance._sum.quantity ?? new Prisma.Decimal(0);
+
+    const resultingStock = currentStock.add(input.quantity);
+
+    if (resultingStock.isNegative()) {
+      throw new BusinessException(
+        'INSUFFICIENT_INVENTORY_STOCK',
+        'Inventory movement would result in negative stock',
       );
+    }
 
-      const balance = await tx.inventoryMovement.aggregate({
-        where: {
-          organizationId: context.organizationId,
-          farmId: input.farmId,
-          inventoryItemId: input.inventoryItemId,
-        },
-        _sum: {
-          quantity: true,
-        },
-      });
-
-      const currentStock = balance._sum.quantity ?? new Prisma.Decimal(0);
-
-      const resultingStock = currentStock.add(input.quantity);
-
-      if (resultingStock.isNegative()) {
-        throw new BusinessException(
-          'INSUFFICIENT_INVENTORY_STOCK',
-          'Inventory movement would result in negative stock',
-        );
-      }
-
-      return tx.inventoryMovement.create({
-        data: {
-          organizationId: context.organizationId,
-          farmId: input.farmId,
-          inventoryItemId: input.inventoryItemId,
-          actorUserId: context.userId,
-          quantity: input.quantity,
-          reason: input.reason,
-          occurredAt: input.occurredAt,
-          note: input.note,
-          reference: input.reference,
-        },
-      });
+    return tx.inventoryMovement.create({
+      data: {
+        organizationId: context.organizationId,
+        farmId: input.farmId,
+        inventoryItemId: input.inventoryItemId,
+        actorUserId: context.userId,
+        quantity: input.quantity,
+        reason: input.reason,
+        occurredAt: input.occurredAt,
+        note: input.note,
+        reference: input.reference,
+      },
     });
   }
 
