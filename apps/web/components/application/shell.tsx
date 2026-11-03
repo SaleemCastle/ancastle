@@ -9,6 +9,7 @@ import {
     ContactRound,
     Truck,
     PackageOpen,
+    Bird,
 } from 'lucide-react';
 import type { ApplicationOrganization } from '@ancastle/types';
 import { LogoutForm } from '@/components/logout-form';
@@ -205,6 +206,21 @@ export function ApplicationShell({
                                     </Link>
                                 )}
                             </>
+                        )}
+                        {current?.permissions.includes('flock:read') && (
+                            <Link
+                                prefetch={false}
+                                aria-current={activePath === '/app/flocks' ? 'page' : undefined}
+                                href={applicationHref(
+                                    '/app/flocks',
+                                    current.organization.id,
+                                    farm?.id,
+                                )}
+                                className={navigationClass('/app/flocks')}
+                            >
+                                <Bird className="size-4" aria-hidden="true" />
+                                Poultry / Flocks
+                            </Link>
                         )}
                         {current?.permissions.includes('customer:read') && (
                             <Link

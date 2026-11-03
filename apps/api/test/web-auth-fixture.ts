@@ -368,6 +368,9 @@ export async function createWebAuthFixture(
       await prisma.farmAccessAssignment.deleteMany({
         where: { organizationId: { in: ownedOrganizations } },
       });
+      await prisma.flock.deleteMany({
+        where: { organizationId: { in: ownedOrganizations } },
+      });
       await prisma.farm.deleteMany({
         where: { organizationId: { in: ownedOrganizations } },
       });
