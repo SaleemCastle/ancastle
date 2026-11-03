@@ -6,6 +6,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { FarmAccessService } from '../authorization/farm-access.service.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
 import { authorizedFlock, effectiveMortality } from './poultry-history.js';
+import { lockFlockMutation } from './flock-mutation-lock.js';
 
 interface MortalityMetadata {
   occurredAt: Date;
@@ -43,7 +44,7 @@ export class MortalityService {
     }
     return this.prisma.$transaction(
       async (tx) => {
-        await this.lockFlock(tx, context, farmId, input.flockId);
+        await lockFlockMutation(tx, context, farmId, input.flockId);
         const flock = await authorizedFlock(
           tx,
           this.farms,
@@ -94,7 +95,7 @@ export class MortalityService {
     try {
       return await this.prisma.$transaction(
         async (tx) => {
-          await this.lockFlock(tx, context, farmId, flockId);
+          await lockFlockMutation(tx, context, farmId, flockId);
           await authorizedFlock(tx, this.farms, context, farmId, flockId);
           const original = await tx.mortalityEvent.findFirst({
             where: {
@@ -140,22 +141,5 @@ export class MortalityService {
       }
       throw error;
     }
-  }
-
-  private async lockFlock(
-    tx: Prisma.TransactionClient,
-    context: OrganizationContext,
-    farmId: string,
-    flockId: string,
-  ) {
-    await tx.$executeRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtext(${context.organizationId}), hashtext(${`mortality:${farmId}:${flockId}`}))
-    `);
-    // Also serialize against ordinary edits of the placement baseline. Read the
-    // authoritative Flock only after obtaining this lock, never from stale input.
-    await tx.$queryRaw(Prisma.sql`
-      SELECT "id" FROM "flocks" WHERE "organizationId" = ${context.organizationId}::uuid
-        AND "farmId" = ${farmId}::uuid AND "id" = ${flockId}::uuid FOR UPDATE
-    `);
   }
 }

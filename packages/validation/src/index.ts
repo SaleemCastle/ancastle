@@ -250,6 +250,49 @@ export type CreateFlockInput = z.infer<typeof createFlockSchema>;
 export type UpdateFlockInput = z.infer<typeof updateFlockSchema>;
 export type FlockQuery = z.infer<typeof flockQuerySchema>;
 
+// This date affects age/maturity only. Ledger totals always include all postings.
+export const flockMetricsQuerySchema = z
+    .object({
+        ageAndMaturityAsOfDate: flockDateSchema,
+    })
+    .strict();
+export const flockApiQuerySchema = flockQuerySchema
+    .extend({
+        ageAndMaturityAsOfDate: flockDateSchema,
+    })
+    .strict();
+export const poultryHistoryQuerySchema = paginationQuerySchema;
+export const flockLifecycleSchema = z.object({}).strict().default({});
+const poultryPostingFields = {
+    occurredAt: z.iso.datetime({ offset: true }).transform((value) => new Date(value)),
+    note: optionalTextSchema(2000),
+    reference: optionalTextSchema(120),
+};
+export const postMortalitySchema = z
+    .object({
+        ...poultryPostingFields,
+        deathCount: startingBirdCountSchema,
+        cause: optionalTextSchema(120),
+    })
+    .strict();
+export const postFeedUsageSchema = z
+    .object({
+        ...poultryPostingFields,
+        inventoryItemId: z.uuid(),
+        // Decimal strings retain the full PostgreSQL precision; ordinary JSON
+        // numbers are accepted when their canonical value fits the same scale.
+        quantity: z
+            .union([z.string(), z.number().finite().transform(String)])
+            .pipe(z.string().regex(/^(?:0|[1-9]\d{0,14})(?:\.\d{1,3})?$/))
+            .refine((value) => /[1-9]/.test(value), 'Quantity must be positive'),
+    })
+    .strict();
+export type FlockMetricsQuery = z.infer<typeof flockMetricsQuerySchema>;
+export type FlockApiQuery = z.infer<typeof flockApiQuerySchema>;
+export type PoultryHistoryQuery = z.infer<typeof poultryHistoryQuerySchema>;
+export type PostMortalityInput = z.infer<typeof postMortalitySchema>;
+export type PostFeedUsageInput = z.infer<typeof postFeedUsageSchema>;
+
 export const inventoryMovementQuantitySchema = z.coerce
     .number()
     .finite()

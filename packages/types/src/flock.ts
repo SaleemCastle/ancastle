@@ -1,4 +1,5 @@
 import type { ApiResponse, PaginatedResponse } from './api.js';
+import type { InventoryUnit } from './index.js';
 
 /** Farm-scoped placement batch. Ownership and lifecycle are read-only to ordinary writes. */
 export interface Flock {
@@ -24,3 +25,60 @@ export interface Flock {
 
 export type FlockResponse = ApiResponse<Flock>;
 export type FlockListResponse = PaginatedResponse<Flock>;
+
+export interface FlockMetrics {
+    /** Calendar date for age/maturity only; ledger totals reflect all current postings. */
+    ageAndMaturityAsOfDate: string;
+    startingBirdCount: number;
+    cumulativeMortality: number;
+    liveBirdCount: number;
+    /** Decimal percentage points, rounded half-up to six places. */
+    mortalityPercentage: string;
+    ageDays: number;
+    ageWeeks: number;
+    daysToMaturity: number | null;
+    maturityState:
+        'BEFORE_EXPECTED_MATURITY' | 'AT_OR_PAST_EXPECTED_MATURITY' | 'NO_EXPECTED_MATURITY_DATE';
+    cumulativeFeedUsage: {
+        inventoryItemId: string;
+        unit: InventoryUnit;
+        quantity: string;
+    }[];
+}
+export interface FlockWithMetrics extends Flock {
+    metrics: FlockMetrics;
+}
+export type FlockDetailResponse = ApiResponse<FlockWithMetrics>;
+export type FlockMetricsListResponse = PaginatedResponse<FlockWithMetrics>;
+
+export interface MortalityEvent {
+    id: string;
+    farmId: string;
+    flockId: string;
+    actorUserId: string;
+    deathCount: number;
+    occurredAt: string;
+    createdAt: string;
+    cause: string | null;
+    note: string | null;
+    reference: string | null;
+    reversesEventId: string | null;
+}
+export interface FeedUsage {
+    id: string;
+    farmId: string;
+    flockId: string;
+    actorUserId: string;
+    inventoryItemId: string;
+    inventoryMovementId: string;
+    quantity: string;
+    occurredAt: string;
+    createdAt: string;
+    note: string | null;
+    reference: string | null;
+    reversesUsageId: string | null;
+}
+export type MortalityResponse = ApiResponse<MortalityEvent>;
+export type MortalityListResponse = PaginatedResponse<MortalityEvent>;
+export type FeedUsageResponse = ApiResponse<FeedUsage>;
+export type FeedUsageListResponse = PaginatedResponse<FeedUsage>;
