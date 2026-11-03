@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../database/prisma.service.js';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { FarmAccessService } from '../authorization/farm-access.service.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
 import { calculateFlockMetrics } from './flock-metrics.js';
@@ -25,36 +26,36 @@ export class FlockMetricsService {
     farmId: string,
     flockId: string,
     ageAndMaturityAsOfDate: string,
+    transaction?: Prisma.TransactionClient,
   ) {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const flock = await authorizedFlock(
-          tx,
-          this.farms,
-          context,
-          farmId,
-          flockId,
-        );
-        const scope = {
-          organizationId: context.organizationId,
-          farmId,
-          flockId: flock.id,
-        };
-        const mortality = await effectiveMortality(tx, scope);
-        const feed = await cumulativeFeedUsage(tx, scope);
-        return calculateFlockMetrics(
-          {
-            startingBirdCount: flock.startingBirdCount,
-            placementDate: flock.placementDate.toISOString().slice(0, 10),
-            expectedMaturityDate:
-              flock.expectedMaturityDate?.toISOString().slice(0, 10) ?? null,
-          },
-          mortality,
-          feed,
-          ageAndMaturityAsOfDate,
-        );
-      },
-      { isolationLevel: 'RepeatableRead' },
-    );
+    const read = async (tx: Prisma.TransactionClient) => {
+      const flock = await authorizedFlock(
+        tx,
+        this.farms,
+        context,
+        farmId,
+        flockId,
+      );
+      const scope = {
+        organizationId: context.organizationId,
+        farmId,
+        flockId: flock.id,
+      };
+      const mortality = await effectiveMortality(tx, scope);
+      const feed = await cumulativeFeedUsage(tx, scope);
+      return calculateFlockMetrics(
+        {
+          startingBirdCount: flock.startingBirdCount,
+          placementDate: flock.placementDate.toISOString().slice(0, 10),
+          expectedMaturityDate:
+            flock.expectedMaturityDate?.toISOString().slice(0, 10) ?? null,
+        },
+        mortality,
+        feed,
+        ageAndMaturityAsOfDate,
+      );
+    };
+    if (transaction) return read(transaction);
+    return this.prisma.$transaction(read, { isolationLevel: 'RepeatableRead' });
   }
 }
