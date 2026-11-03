@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
-import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaService } from '../../database/prisma.service.js';
-import { Prisma, PrismaClient } from '../../generated/prisma/client.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import { temporaryDatabase } from '../../test/temporary-database.js';
 import { OrganizationContext } from '../authorization/organization-context.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { FarmAccessService } from '../authorization/farm-access.service.js';
@@ -14,9 +13,7 @@ describe('Feed usage and inventory (PostgreSQL)', () => {
   // Real committed transactions are needed to prove cross-service rollback and
   // advisory-lock concurrency. Isolate this suite in an owned temporary database
   // so cleanup never deletes append-only history or disables its protections.
-  const admin = new PrismaService();
-  const databaseName = `feed_test_${randomUUID().replaceAll('-', '')}`;
-  let databaseCreated = false;
+  let database: Awaited<ReturnType<typeof temporaryDatabase>>;
   let prisma: PrismaService;
   let stock: InventoryStockService;
   let service: FeedUsageService;
@@ -34,43 +31,8 @@ describe('Feed usage and inventory (PostgreSQL)', () => {
   });
 
   beforeAll(async () => {
-    await admin.$connect();
-    await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
-    databaseCreated = true;
-    const url = new URL(process.env.DATABASE_URL!);
-    url.pathname = `/${databaseName}`;
-    const adapter = new PrismaPg({ connectionString: url.toString() });
-    const setup = await adapter.connect();
-    try {
-      const migrations = new URL(
-        '../../../prisma/migrations/',
-        import.meta.url,
-      );
-      for (const entry of (
-        await readdir(migrations, { withFileTypes: true })
-      ).sort((a, b) => a.name.localeCompare(b.name))) {
-        if (entry.isDirectory()) {
-          // Send the whole migration through pg's simple-query protocol. The
-          // adapter's executeScript splitter cannot handle PL/pgSQL semicolons.
-          await setup
-            .underlyingDriver()
-            .query(
-              await readFile(
-                new URL(`${entry.name}/migration.sql`, migrations),
-                'utf8',
-              ),
-            );
-        }
-      }
-    } finally {
-      await setup.dispose();
-    }
-    // PrismaService only adds lifecycle hooks; the isolated client supplies the
-    // same database operations to these directly constructed domain services.
-    prisma = new PrismaClient({
-      adapter: new PrismaPg({ connectionString: url.toString() }),
-    }) as PrismaService;
-    await prisma.$connect();
+    database = await temporaryDatabase();
+    prisma = database.prisma;
     stock = new InventoryStockService(prisma);
     service = new FeedUsageService(
       prisma,
@@ -80,13 +42,7 @@ describe('Feed usage and inventory (PostgreSQL)', () => {
   }, 60_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    if (databaseCreated && /^feed_test_[a-f0-9]{32}$/.test(databaseName)) {
-      await admin.$executeRawUnsafe(
-        `DROP DATABASE "${databaseName}" WITH (FORCE)`,
-      );
-    }
-    await admin.$disconnect();
+    await database?.dispose();
   });
 
   beforeEach(async () => {
