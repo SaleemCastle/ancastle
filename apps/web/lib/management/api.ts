@@ -33,6 +33,11 @@ const messages: Record<string, string> = {
     INVENTORY_ITEM_CODE_LIMIT_REACHED: 'No additional inventory item codes are available.',
     INVENTORY_SCOPE_NOT_FOUND: 'This inventory resource is unavailable.',
     INSUFFICIENT_INVENTORY_STOCK: 'This movement would reduce stock below zero.',
+    FLOCK_NOT_FOUND: 'This flock is unavailable in the selected farm.',
+    FLOCK_OVER_MORTALITY: 'Starting population cannot be less than recorded mortality.',
+    FLOCK_CLOSED: 'This flock is closed.',
+    FLOCK_CODE_LIMIT_REACHED: 'No additional flock codes are available.',
+    FLOCK_CODE_GENERATION_FAILED: 'The flock could not be created. Please try again.',
 };
 export class ManagementApiError extends Error {
     constructor(readonly code: string) {

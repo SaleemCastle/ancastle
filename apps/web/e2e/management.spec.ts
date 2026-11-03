@@ -45,6 +45,90 @@ async function signIn(page: Page, account: { email: string; password: string }) 
 }
 const url = (path: string, organization: string) => path + '?organization=' + organization;
 
+test('manages farm flocks through real APIs with responsive views and read-only access', async ({
+    page,
+    account,
+}) => {
+    test.setTimeout(60000);
+    const first = await account.addFarm('Flock Farm A', 'FLOCK-A');
+    const second = await account.addFarm('Flock Farm B', 'FLOCK-B');
+    const flockUrl = (path: string, farm = first.id) =>
+        url(path, account.organizationId) + '&farm=' + farm;
+    const noPageOverflow = async () =>
+        expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        ).toBe(true);
+    await signIn(page, account);
+    await page.goto(flockUrl('/app/flocks'));
+    await expect(
+        page
+            .getByRole('navigation', { name: 'Primary navigation' })
+            .getByRole('link', { name: 'Poultry / Flocks' }),
+    ).toBeVisible();
+    await expect(page.getByText('No flocks yet.', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Create flock', exact: true }).click();
+    await page.setViewportSize({ width: 375, height: 812 });
+    const create = page.getByRole('form', { name: 'Create flock', exact: true });
+    await create.getByLabel('Flock name', { exact: true }).fill('Layer placement');
+    await create.getByLabel('Bird type', { exact: true }).fill('Layers');
+    await create.getByLabel('Placement date', { exact: true }).fill('2026-10-01');
+    await create.getByLabel('Starting population', { exact: true }).fill('100');
+    await create.getByLabel('Expected maturity date', { exact: true }).fill('2026-12-01');
+    await noPageOverflow();
+    await create.getByRole('button', { name: 'Create flock', exact: true }).click();
+    await expect(create.getByRole('status')).toHaveText('Flock created.');
+    await create.getByRole('link', { name: 'View created flock' }).click();
+    await expect(page).toHaveURL(/\/app\/flocks\/[0-9a-f-]{36}\?/);
+    const detailUrl = page.url();
+    await expect(page.getByRole('heading', { name: 'Layer placement', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Flock details' })).toContainText(
+        'Live population100',
+    );
+    await noPageOverflow();
+    await page.getByRole('link', { name: 'Edit flock', exact: true }).click();
+    const edit = page.getByRole('form', { name: 'Edit flock', exact: true });
+    await edit.getByLabel('Flock name', { exact: true }).fill('Updated placement');
+    await edit.getByLabel('Expected maturity date', { exact: true }).fill('');
+    await edit.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(edit.getByRole('status')).toHaveText('Flock saved.');
+    await page.getByRole('link', { name: 'Back to flock', exact: true }).click();
+    await expect(
+        page.getByRole('heading', { name: 'Updated placement', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('No expected maturity date', { exact: true })).toBeVisible();
+    const lifecycle = page.getByRole('form', { name: 'Flock lifecycle' });
+    await lifecycle.getByRole('button', { name: 'Close flock', exact: true }).click();
+    await expect(page.getByRole('status', { name: 'Status: Closed' })).toBeVisible();
+    await lifecycle.getByRole('button', { name: 'Reactivate flock', exact: true }).click();
+    await expect(page.getByRole('status', { name: 'Status: Active' })).toBeVisible();
+    await page.getByRole('link', { name: 'Back to flocks', exact: true }).click();
+    await expect(page.getByRole('table')).toContainText('Updated placement');
+    await noPageOverflow();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await noPageOverflow();
+    await page.getByRole('search').getByLabel('Search', { exact: true }).fill('no-such-flock');
+    await page.getByRole('search').getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page.getByText('No flocks match this view.', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Clear filters', exact: true }).click();
+    await page.getByLabel('Farm', { exact: true }).selectOption(second.id);
+    await page.getByRole('button', { name: 'Use farm', exact: true }).click();
+    await expect(page.getByText('No flocks yet.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('table')).toHaveCount(0);
+    await account.setRole('STAFF');
+    await page.goto(detailUrl);
+    await expect(
+        page.getByRole('heading', { name: 'Updated placement', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Edit flock', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('form', { name: 'Flock lifecycle' })).toHaveCount(0);
+    const editUrl = new URL(detailUrl);
+    editUrl.pathname += '/edit';
+    await page.goto(editUrl.toString());
+    await expect(page.getByRole('main').getByRole('alert')).toHaveText(
+        'You do not have permission to perform this action.',
+    );
+});
+
 test('redirects unauthenticated organization/farm administration routes', async ({ page }) => {
     for (const path of [
         '/app/settings/organization',
