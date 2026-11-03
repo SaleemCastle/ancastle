@@ -22,6 +22,12 @@ export const Permission = {
   INVENTORY_MOVEMENT_POST: 'inventory:movement-post',
   INVENTORY_LIFECYCLE_MANAGE: 'inventory:lifecycle-manage',
 
+  FLOCK_READ: 'flock:read',
+  // Create/edit flock definitions and close/reactivate the flock lifecycle.
+  FLOCK_MANAGE: 'flock:manage',
+  FLOCK_MORTALITY_POST: 'flock:mortality-post',
+  FLOCK_FEED_USAGE_POST: 'flock:feed-usage-post',
+
   USER_READ: 'user:read',
   USER_CREATE: 'user:create',
   USER_UPDATE: 'user:update',

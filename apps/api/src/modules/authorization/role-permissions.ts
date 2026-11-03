@@ -34,6 +34,11 @@ export const rolePermissions: Record<
     Permission.INVENTORY_MOVEMENT_POST,
     Permission.INVENTORY_LIFECYCLE_MANAGE,
 
+    Permission.FLOCK_READ,
+    Permission.FLOCK_MANAGE,
+    Permission.FLOCK_MORTALITY_POST,
+    Permission.FLOCK_FEED_USAGE_POST,
+
     Permission.USER_READ,
     Permission.USER_CREATE,
     Permission.USER_UPDATE,
@@ -61,6 +66,12 @@ export const rolePermissions: Record<
     Permission.INVENTORY_MOVEMENT_POST,
     Permission.INVENTORY_LIFECYCLE_MANAGE,
 
+    // Day-to-day poultry management still requires verified farm access.
+    Permission.FLOCK_READ,
+    Permission.FLOCK_MANAGE,
+    Permission.FLOCK_MORTALITY_POST,
+    Permission.FLOCK_FEED_USAGE_POST,
+
     Permission.USER_READ,
     Permission.MEMBERSHIP_READ,
   ],
@@ -72,5 +83,10 @@ export const rolePermissions: Record<
     Permission.FARM_READ,
     Permission.INVENTORY_READ,
     Permission.INVENTORY_MOVEMENT_POST,
+    // Assigned operational staff may record events, but cannot create/edit or
+    // close/reactivate flocks. These capabilities never grant FARM_ACCESS_ALL.
+    Permission.FLOCK_READ,
+    Permission.FLOCK_MORTALITY_POST,
+    Permission.FLOCK_FEED_USAGE_POST,
   ],
 };

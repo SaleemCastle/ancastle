@@ -5,6 +5,25 @@ import { Permission } from './permissions.js';
 describe('AuthorizationService', () => {
   const service = new AuthorizationService();
 
+  // OWNER is already covered by "every defined permission" below.
+  it.each([
+    [MembershipRole.ADMIN, [true, true, true, true]],
+    [MembershipRole.MANAGER, [true, true, true, true]],
+    [MembershipRole.STAFF, [true, false, true, true]],
+  ] as const)(
+    'enforces flock read/manage/mortality/feed capabilities for %s',
+    (role, expected) => {
+      expect(
+        [
+          Permission.FLOCK_READ,
+          Permission.FLOCK_MANAGE,
+          Permission.FLOCK_MORTALITY_POST,
+          Permission.FLOCK_FEED_USAGE_POST,
+        ].map((permission) => service.hasPermission(role, permission)),
+      ).toEqual(expected);
+    },
+  );
+
   it('allows owners every defined permission', () => {
     for (const permission of Object.values(Permission)) {
       expect(service.hasPermission(MembershipRole.OWNER, permission)).toBe(

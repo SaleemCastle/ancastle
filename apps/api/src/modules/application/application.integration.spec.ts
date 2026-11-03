@@ -206,10 +206,26 @@ describe('Application access discovery (HTTP + PostgreSQL)', () => {
       displayName: 'Organization A name',
     });
     expect(a.permissions).toContain('farm:access-all');
+    expect(a.permissions).toEqual(
+      expect.arrayContaining([
+        'flock:read',
+        'flock:manage',
+        'flock:mortality-post',
+        'flock:feed-usage-post',
+      ]),
+    );
     expect(b.organization.id).toBe(orgs.b);
     expect(b.farms.map((farm: { id: string }) => farm.id)).toEqual([farms.b]);
     expect(b.membership.role).toBe('STAFF');
     expect(b.permissions).not.toContain('farm:access-all');
+    expect(b.permissions).toEqual(
+      expect.arrayContaining([
+        'flock:read',
+        'flock:mortality-post',
+        'flock:feed-usage-post',
+      ]),
+    );
+    expect(b.permissions).not.toContain('flock:manage');
     expect(JSON.stringify(response.body)).not.toContain(farms.foreign);
     expect(JSON.stringify(response.body)).not.toContain(farms.unassigned);
     expect(JSON.stringify(response.body)).not.toContain(farms.inactive);
@@ -271,6 +287,7 @@ describe('Application access discovery (HTTP + PostgreSQL)', () => {
     });
     let response = await get().expect(200);
     expect(response.body.data[0].permissions).not.toContain('farm:access-all');
+    expect(response.body.data[0].permissions).not.toContain('flock:manage');
     expect(
       response.body.data[0].farms.map((farm: { id: string }) => farm.id),
     ).toEqual([farms.a]);
@@ -280,6 +297,14 @@ describe('Application access discovery (HTTP + PostgreSQL)', () => {
     });
     response = await get().expect(200);
     expect(response.body.data[0].farms).toEqual([]);
+    // Organization capability alone does not provide an operational farm scope.
+    expect(response.body.data[0].permissions).toEqual(
+      expect.arrayContaining([
+        'flock:read',
+        'flock:mortality-post',
+        'flock:feed-usage-post',
+      ]),
+    );
     expect(
       response.body.data[1].farms.map((farm: { id: string }) => farm.id),
     ).toEqual([farms.b]);
