@@ -38,6 +38,9 @@ const messages: Record<string, string> = {
     FLOCK_CLOSED: 'This flock is closed.',
     FLOCK_CODE_LIMIT_REACHED: 'No additional flock codes are available.',
     FLOCK_CODE_GENERATION_FAILED: 'The flock could not be created. Please try again.',
+    FEED_USAGE_SCOPE_NOT_FOUND: 'The active flock or feed item is unavailable in this farm.',
+    FEED_USAGE_INVALID_QUANTITY: 'Enter a positive quantity with at most three decimal places.',
+    MORTALITY_INVALID_COUNT: 'Enter a positive whole number of deaths.',
 };
 export class ManagementApiError extends Error {
     constructor(readonly code: string) {

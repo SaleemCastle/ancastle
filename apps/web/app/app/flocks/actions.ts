@@ -1,24 +1,109 @@
 'use server';
 
-import { createFlockSchema, updateFlockSchema, resourceIdSchema } from '@ancastle/validation';
+import {
+    createFlockSchema,
+    updateFlockSchema,
+    resourceIdSchema,
+    postMortalitySchema,
+    postFeedUsageSchema,
+} from '@ancastle/validation';
 import { requireApplicationContext } from '@/lib/application/current-context';
 import { ManagementApiError, managementApi } from '@/lib/management/api';
 import { flockApiPath, flockResponseSchema, flockScope } from '@/lib/management/flock-api';
 import { flockFields } from '@/lib/management/flocks';
 import { formValue, runOrganizationMutation, validateForm } from '@/lib/management/mutation';
 import type { ManagementActionState } from '@/lib/management/action-state';
+import { mortalityResponseSchema, feedUsageResponseSchema } from '@/lib/management/poultry-api';
 
 function runFlockMutation(
     form: FormData,
     operation: (path: string) => Promise<ManagementActionState>,
+    permission = 'flock:manage',
 ) {
-    return runOrganizationMutation(form, ['flock:read', 'flock:manage'], async (organization) => {
+    return runOrganizationMutation(form, ['flock:read', permission], async (organization) => {
         const farm = validateForm(resourceIdSchema, formValue(form, 'farm'));
         const context = await requireApplicationContext({ organization, farm });
-        const scope = flockScope(context, true);
-        if (!scope) throw new ManagementApiError('FORBIDDEN');
+        const scope = flockScope(context);
+        if (!scope || !context.current!.permissions.includes(permission))
+            throw new ManagementApiError('FORBIDDEN');
         return operation(flockApiPath(scope));
     });
+}
+
+function postingInput(form: FormData) {
+    return {
+        occurredAt: formValue(form, 'occurredAt'),
+        note: formValue(form, 'note'),
+        reference: formValue(form, 'reference'),
+    };
+}
+
+export async function postMortalityAction(
+    _previous: ManagementActionState,
+    form: FormData,
+): Promise<ManagementActionState> {
+    return runFlockMutation(
+        form,
+        async (path) => {
+            const id = validateForm(resourceIdSchema, formValue(form, 'flockId'));
+            const count = formValue(form, 'deathCount');
+            const input = validateForm(postMortalitySchema, {
+                ...postingInput(form),
+                deathCount: typeof count === 'string' ? Number(count) : count,
+                cause: formValue(form, 'cause'),
+            });
+            try {
+                const result = await managementApi(
+                    `${path}/${id}/mortality`,
+                    mortalityResponseSchema,
+                    { method: 'POST', body: JSON.stringify(input) },
+                );
+                return { success: 'Mortality recorded.', resourceId: result.data.id };
+            } catch (error) {
+                if (error instanceof ManagementApiError && error.code === 'FLOCK_OVER_MORTALITY')
+                    return {
+                        error: 'Death count exceeds the remaining live population. Check the count and try again.',
+                    };
+                throw error;
+            }
+        },
+        'flock:mortality-post',
+    );
+}
+
+export async function postFeedUsageAction(
+    _previous: ManagementActionState,
+    form: FormData,
+): Promise<ManagementActionState> {
+    return runFlockMutation(
+        form,
+        async (path) => {
+            const id = validateForm(resourceIdSchema, formValue(form, 'flockId'));
+            const input = validateForm(postFeedUsageSchema, {
+                ...postingInput(form),
+                inventoryItemId: formValue(form, 'inventoryItemId'),
+                quantity: formValue(form, 'quantity'),
+            });
+            try {
+                const result = await managementApi(
+                    `${path}/${id}/feed-usage`,
+                    feedUsageResponseSchema,
+                    { method: 'POST', body: JSON.stringify(input) },
+                );
+                return { success: 'Feed usage recorded.', resourceId: result.data.id };
+            } catch (error) {
+                if (
+                    error instanceof ManagementApiError &&
+                    error.code === 'INSUFFICIENT_INVENTORY_STOCK'
+                )
+                    return {
+                        error: 'There is not enough feed stock at this farm for that quantity.',
+                    };
+                throw error;
+            }
+        },
+        'flock:feed-usage-post',
+    );
 }
 
 function flockInput(form: FormData, partial = false) {

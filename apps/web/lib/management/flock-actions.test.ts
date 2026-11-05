@@ -18,10 +18,13 @@ import {
     createFlockAction,
     updateFlockAction,
     setFlockStatusAction,
+    postMortalityAction,
+    postFeedUsageAction,
 } from '../../app/app/flocks/actions';
 import { ManagementApiError } from './api';
 import { ApplicationAccessDeniedError } from '../application/selection';
 import { changedFlockForm, flockMetricsDate } from './flocks';
+import { poultryPostingForm } from './poultry-form';
 
 const organization = randomUUID();
 const farm = randomUUID();
@@ -155,4 +158,151 @@ it('blocks mutations without manage permission or verified farm access', async (
 
 it('resolves the UTC calendar date at the metrics request boundary', () => {
     expect(flockMetricsDate(new Date('2026-11-03T23:30:00-05:00'))).toBe('2026-11-04');
+});
+
+const posting = { occurredAt: '2026-11-03T14:30:00.000Z', note: ' Morning check ', reference: '' };
+const feedItem = randomUUID();
+function postingPermission(permission: string) {
+    fake.context.mockResolvedValue({
+        current: { organization: { id: organization }, permissions: ['flock:read', permission] },
+        farm: { id: farm },
+    });
+}
+
+it('posts mortality with its own permission, shared validation and no ownership/audit claims', async () => {
+    postingPermission('flock:mortality-post');
+    expect(
+        await postMortalityAction(
+            {},
+            form({
+                ...posting,
+                deathCount: '2',
+                cause: ' Unknown ',
+                actorUserId: randomUUID(),
+                farmId: randomUUID(),
+                reversesEventId: randomUUID(),
+            }),
+        ),
+    ).toEqual({ success: 'Mortality recorded.', resourceId: flockId });
+    expect(fake.context).toHaveBeenLastCalledWith({ organization, farm });
+    expect(fake.api).toHaveBeenCalledWith(`${path}/${flockId}/mortality`, expect.anything(), {
+        method: 'POST',
+        body: JSON.stringify({
+            occurredAt: posting.occurredAt,
+            note: 'Morning check',
+            deathCount: 2,
+            cause: 'Unknown',
+        }),
+    });
+    expect(fake.revalidate).toHaveBeenCalledWith('/app', 'layout');
+    fake.api.mockRejectedValueOnce(new ManagementApiError('FLOCK_OVER_MORTALITY'));
+    expect(
+        (await postMortalityAction({}, form({ ...posting, deathCount: '200', cause: '' }))).error,
+    ).toMatch(/Death count exceeds/);
+});
+
+it('posts a precise positive feed quantity once and lets the API own the inventory issue', async () => {
+    postingPermission('flock:feed-usage-post');
+    const result = await postFeedUsageAction(
+        {},
+        form({
+            ...posting,
+            inventoryItemId: feedItem,
+            quantity: '999999999999999.999',
+            inventoryMovementId: randomUUID(),
+            reason: 'ADJUSTMENT',
+        }),
+    );
+    expect(result.success).toBe('Feed usage recorded.');
+    expect(fake.api).toHaveBeenCalledTimes(1);
+    expect(fake.api).toHaveBeenCalledWith(`${path}/${flockId}/feed-usage`, expect.anything(), {
+        method: 'POST',
+        body: JSON.stringify({
+            occurredAt: posting.occurredAt,
+            note: 'Morning check',
+            inventoryItemId: feedItem,
+            quantity: '999999999999999.999',
+        }),
+    });
+    expect(fake.revalidate).toHaveBeenCalledWith('/app', 'layout');
+    fake.api.mockRejectedValueOnce(new ManagementApiError('INSUFFICIENT_INVENTORY_STOCK'));
+    expect(
+        (
+            await postFeedUsageAction(
+                {},
+                form({ ...posting, inventoryItemId: feedItem, quantity: '5' }),
+            )
+        ).error,
+    ).toMatch(/not enough feed stock at this farm/);
+});
+
+it('rejects posting contract bypasses and malformed flock IDs before calling APIs', async () => {
+    postingPermission('flock:mortality-post');
+    expect(
+        (await postMortalityAction({}, form({ ...posting, deathCount: '1.5', cause: '' }))).fields
+            ?.deathCount,
+    ).toBeDefined();
+    expect(
+        (
+            await postMortalityAction(
+                {},
+                form({ ...posting, deathCount: '1', cause: '', occurredAt: '2026-11-03T14:30' }),
+            )
+        ).fields?.occurredAt,
+    ).toBeDefined();
+    postingPermission('flock:feed-usage-post');
+    for (const quantity of ['-1', '0', '1.0001'])
+        expect(
+            (
+                await postFeedUsageAction(
+                    {},
+                    form({ ...posting, inventoryItemId: feedItem, quantity }),
+                )
+            ).fields?.quantity,
+        ).toBeDefined();
+    expect(
+        (
+            await postFeedUsageAction(
+                {},
+                form({
+                    ...posting,
+                    inventoryItemId: feedItem,
+                    quantity: '1',
+                    flockId: '../foreign',
+                }),
+            )
+        ).error,
+    ).toBeDefined();
+    expect(fake.api).not.toHaveBeenCalled();
+});
+
+it('rechecks the exact posting permission and selected farm, independently of manage access', async () => {
+    const mortalityForm = () => form({ ...posting, deathCount: '1', cause: '' });
+    expect((await postMortalityAction({}, mortalityForm())).error).toBeDefined(); // manage is not posting permission
+    postingPermission('flock:mortality-post');
+    fake.context.mockResolvedValueOnce({
+        current: {
+            organization: { id: organization },
+            permissions: ['flock:read', 'flock:mortality-post'],
+        },
+    });
+    fake.context.mockRejectedValueOnce(new ApplicationAccessDeniedError());
+    expect((await postMortalityAction({}, mortalityForm())).error).toBeDefined();
+    postingPermission('flock:mortality-post');
+    expect(
+        (
+            await postFeedUsageAction(
+                {},
+                form({ ...posting, inventoryItemId: feedItem, quantity: '1' }),
+            )
+        ).error,
+    ).toBeDefined();
+    expect(fake.api).not.toHaveBeenCalled();
+});
+
+it('converts browser-local occurrence time to an ISO instant before shared API validation', () => {
+    const input = form({ occurredAt: '2026-11-03T09:30' });
+    expect(poultryPostingForm(input).get('occurredAt')).toBe(
+        new Date('2026-11-03T09:30').toISOString(),
+    );
 });
