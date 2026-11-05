@@ -1,4 +1,4 @@
-import type { FlockWithMetrics } from '@ancastle/types';
+import type { FlockWithMetrics, InventoryItem } from '@ancastle/types';
 import { flockMaturityLabel } from '@/lib/management/flocks';
 
 export function FlockStatus({ isActive }: { isActive: boolean }) {
@@ -28,7 +28,13 @@ export function FlockAge({ flock }: { flock: FlockWithMetrics }) {
     );
 }
 
-export function FlockDetails({ flock }: { flock: FlockWithMetrics }) {
+export function FlockDetails({
+    flock,
+    feedItems,
+}: {
+    flock: FlockWithMetrics;
+    feedItems?: ReadonlyMap<string, InventoryItem>;
+}) {
     const { metrics } = flock;
     const values = [
         ['Flock code', flock.code],
@@ -68,7 +74,9 @@ export function FlockDetails({ flock }: { flock: FlockWithMetrics }) {
                     <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
                         {metrics.cumulativeFeedUsage.map((feed) => (
                             <li key={feed.inventoryItemId} className="wrap-break-word">
-                                {feed.quantity} {feed.unit} · Feed item {feed.inventoryItemId}
+                                {feed.quantity} {feed.unit} ·{' '}
+                                {feedItems?.get(feed.inventoryItemId)?.name ??
+                                    'Feed item unavailable'}
                             </li>
                         ))}
                     </ul>

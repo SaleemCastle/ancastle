@@ -6,6 +6,9 @@ import { FlockDetails, FlockStatus } from '@/components/flocks/details';
 import { buttonVariants } from '@/components/ui/button';
 import { applicationHref, type ApplicationSearch } from '@/lib/application/selection';
 import { flockScope, loadFlock } from '@/lib/management/flock-api';
+import { loadPoultryOperations } from '@/lib/management/poultry-api';
+import { FlockPostingForm } from '@/components/flocks/posting-form';
+import { PoultryHistory } from '@/components/flocks/history';
 
 export const metadata: Metadata = { title: 'Flock details | Ancastle Farms' };
 export default function FlockPage({
@@ -20,11 +23,19 @@ export default function FlockPage({
             searchParams={searchParams}
             activePath="/app/flocks"
             title="Flock details"
-            render={async (context) => {
+            render={async (context, search) => {
                 const scope = flockScope(context);
                 if (!scope) return <p>Select an available farm to view a flock.</p>;
                 const { data } = await loadFlock(scope, (await params).flockId);
                 const canManage = context.current!.permissions.includes('flock:manage');
+                const permissions = context.current!.permissions;
+                const inventoryRead = permissions.includes('inventory:read');
+                const operations = await loadPoultryOperations(
+                    scope,
+                    data.id,
+                    search,
+                    inventoryRead,
+                );
                 return (
                     <>
                         <Link
@@ -51,7 +62,7 @@ export default function FlockPage({
                                 </Link>
                             )}
                         </div>
-                        <FlockDetails flock={data} />
+                        <FlockDetails flock={data} feedItems={operations.items} />
                         {canManage ? (
                             <FlockStatusForm
                                 key={scope.organization + scope.farm + data.id}
@@ -60,9 +71,46 @@ export default function FlockPage({
                             />
                         ) : (
                             <p className="mt-4 text-sm text-muted-foreground">
-                                Your access to this flock is read-only.
+                                Your access to this flock definition is read-only.
                             </p>
                         )}
+                        <section aria-label="Flock operations" className="mt-8 space-y-4">
+                            {!data.isActive ? (
+                                <p className="rounded-xl border p-5 text-sm text-muted-foreground">
+                                    This flock is closed. Operational history remains available; new
+                                    postings require reactivation.
+                                </p>
+                            ) : (
+                                <div className="grid items-start gap-6 xl:grid-cols-2">
+                                    {permissions.includes('flock:mortality-post') && (
+                                        <FlockPostingForm
+                                            key={`${scope.organization}:${scope.farm}:${data.id}:mortality`}
+                                            kind="mortality"
+                                            {...scope}
+                                            flockId={data.id}
+                                        />
+                                    )}
+                                    {permissions.includes('flock:feed-usage-post') &&
+                                        (inventoryRead &&
+                                        operations.choices.some((item) => !item.outOfStock) ? (
+                                            <FlockPostingForm
+                                                key={`${scope.organization}:${scope.farm}:${data.id}:feed`}
+                                                kind="feed"
+                                                {...scope}
+                                                flockId={data.id}
+                                                choices={operations.choices}
+                                            />
+                                        ) : (
+                                            <p className="rounded-xl border p-5 text-sm text-muted-foreground">
+                                                {inventoryRead
+                                                    ? 'No active feed items with stock are available at this farm.'
+                                                    : 'Inventory read access is needed to select a feed item.'}
+                                            </p>
+                                        ))}
+                                </div>
+                            )}
+                        </section>
+                        <PoultryHistory {...scope} flockId={data.id} operations={operations} />
                     </>
                 );
             }}
