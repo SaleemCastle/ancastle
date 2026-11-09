@@ -291,6 +291,126 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
     ).toBe(1);
   });
 
+  it('filters existing maturity states before scoped counts/pagination, independently of lifecycle', async () => {
+    await prisma.flock.update({
+      where: { id: flock },
+      data: {
+        name: 'Maturity sample',
+        expectedMaturityDate: new Date('2026-11-10'),
+      },
+    });
+    const future = randomUUID(),
+      closed = randomUUID(),
+      unknown = randomUUID();
+    await prisma.flock.createMany({
+      data: [
+        {
+          id: future,
+          code: 'FLK-000003',
+          expectedMaturityDate: new Date('2026-11-11'),
+          isActive: true,
+        },
+        {
+          id: closed,
+          code: 'FLK-000004',
+          expectedMaturityDate: new Date('2026-11-12'),
+          isActive: false,
+        },
+        {
+          id: unknown,
+          code: 'FLK-000005',
+          expectedMaturityDate: null,
+          isActive: true,
+        },
+      ].map((record) => ({
+        ...record,
+        organizationId: org,
+        farmId: farm,
+        name: 'Maturity sample',
+        birdType: 'Broiler',
+        startingBirdCount: 100,
+        placementDate: new Date('2026-11-01'),
+      })),
+    });
+    // Foreign/other-farm rows deliberately match the search and state as well.
+    await prisma.flock.updateMany({
+      where: { id: { in: [otherFlock, foreignFlock] } },
+      data: { name: 'Maturity sample' },
+    });
+    const list = (extra: Record<string, string | number> = {}) =>
+      api()
+        .get(path())
+        .set('Authorization', auth('staff'))
+        .query({ ...date, search: 'maturity', birdType: 'Broiler', ...extra });
+    const first = await list({
+      maturityState: 'BEFORE_EXPECTED_MATURITY',
+      pageSize: 1,
+    }).expect(200);
+    expect(first.body.meta).toEqual({
+      page: 1,
+      pageSize: 1,
+      totalItems: 2,
+      totalPages: 2,
+    });
+    expect(first.body.data.map((row: { id: string }) => row.id)).toEqual([
+      future,
+    ]);
+    const second = await list({
+      maturityState: 'BEFORE_EXPECTED_MATURITY',
+      pageSize: 1,
+      page: 2,
+    }).expect(200);
+    expect(second.body.meta).toEqual({
+      page: 2,
+      pageSize: 1,
+      totalItems: 2,
+      totalPages: 2,
+    });
+    expect(second.body.data[0]).toMatchObject({
+      id: closed,
+      isActive: false,
+      metrics: { maturityState: 'BEFORE_EXPECTED_MATURITY', daysToMaturity: 2 },
+    });
+    const closedOnly = await list({
+      maturityState: 'BEFORE_EXPECTED_MATURITY',
+      isActive: 'false',
+    }).expect(200);
+    expect(closedOnly.body.meta.totalItems).toBe(1);
+    expect(closedOnly.body.data[0].id).toBe(closed);
+    const mature = await list({
+      maturityState: 'AT_OR_PAST_EXPECTED_MATURITY',
+    }).expect(200);
+    expect(mature.body.data.map((row: { id: string }) => row.id)).toEqual([
+      flock,
+    ]);
+    expect(mature.body.data[0].metrics).toMatchObject({
+      maturityState: 'AT_OR_PAST_EXPECTED_MATURITY',
+      daysToMaturity: 0,
+    });
+    const none = await list({
+      maturityState: 'NO_EXPECTED_MATURITY_DATE',
+    }).expect(200);
+    expect(none.body.data.map((row: { id: string }) => row.id)).toEqual([
+      unknown,
+    ]);
+    expect(none.body.data[0].metrics.daysToMaturity).toBeNull();
+    const nextDay = await list({
+      maturityState: 'AT_OR_PAST_EXPECTED_MATURITY',
+      ageAndMaturityAsOfDate: '2026-11-11',
+    }).expect(200);
+    expect(nextDay.body.meta.totalItems).toBe(2);
+    expect(nextDay.body.data.map((row: { id: string }) => row.id)).toEqual([
+      flock,
+      future,
+    ]);
+    const previousDay = await list({
+      maturityState: 'AT_OR_PAST_EXPECTED_MATURITY',
+      ageAndMaturityAsOfDate: '2026-11-09',
+    }).expect(200);
+    expect(previousDay.body.meta.totalItems).toBe(0);
+    await list({ maturityState: 'APPROACHING_7_DAYS' }).expect(400);
+  });
+
   it('validates each one-date PATCH against persisted counterpart and protects the mortality baseline', async () => {
     for (const input of [
       { placementDate: '2026-12-02' },

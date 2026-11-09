@@ -1,6 +1,11 @@
 import 'server-only';
 import { z } from 'zod';
-import { INVENTORY_UNITS, type Flock, type FlockWithMetrics } from '@ancastle/types';
+import {
+    INVENTORY_UNITS,
+    FLOCK_MATURITY_STATES,
+    type Flock,
+    type FlockWithMetrics,
+} from '@ancastle/types';
 import { resourceIdSchema } from '@ancastle/validation';
 import type { ManagementContext } from '@/components/management/page';
 import { ManagementApiError, managementApi } from './api';
@@ -31,11 +36,7 @@ const flockWithMetricsSchema = flockSchema.extend({
         ageDays: z.number().int(),
         ageWeeks: z.number(),
         daysToMaturity: z.number().int().nullable(),
-        maturityState: z.enum([
-            'BEFORE_EXPECTED_MATURITY',
-            'AT_OR_PAST_EXPECTED_MATURITY',
-            'NO_EXPECTED_MATURITY_DATE',
-        ]),
+        maturityState: z.enum(FLOCK_MATURITY_STATES),
         cumulativeFeedUsage: z.array(
             z.object({
                 inventoryItemId: z.uuid(),

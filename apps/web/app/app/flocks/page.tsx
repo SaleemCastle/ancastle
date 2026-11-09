@@ -1,15 +1,19 @@
 import type { Metadata } from 'next';
-import type { FlockWithMetrics } from '@ancastle/types';
+import { FLOCK_MATURITY_STATES, type FlockWithMetrics } from '@ancastle/types';
 import Link from 'next/link';
 import { flockApiQuerySchema } from '@ancastle/validation';
 import { ManagementPage } from '@/components/management/page';
 import { MasterDataList, type MasterDataColumn } from '@/components/management/master-data-list';
-import { FlockAge, FlockStatus } from '@/components/flocks/details';
+import { FlockAge, FlockStatus, FlockMortality } from '@/components/flocks/details';
 import { Button } from '@/components/ui/button';
 import { applicationHref, type ApplicationSearch } from '@/lib/application/selection';
 import { ManagementApiError, managementApi } from '@/lib/management/api';
 import { flockApiPath, flockListResponseSchema, flockScope } from '@/lib/management/flock-api';
-import { flockMetricsDate } from '@/lib/management/flocks';
+import {
+    flockMetricsDate,
+    flockMaturityLabels,
+    flockMaturityExplanation,
+} from '@/lib/management/flocks';
 
 export const metadata: Metadata = { title: 'Flocks | Ancastle Farms' };
 export default function FlocksPage({ searchParams }: { searchParams: Promise<ApplicationSearch> }) {
@@ -33,7 +37,8 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                     search: search.search,
                     birdType: search.birdType,
                     isActive: search.isActive === '' ? undefined : search.isActive,
-                    ageAndMaturityAsOfDate: flockMetricsDate(),
+                    maturityState: search.maturityState === '' ? undefined : search.maturityState,
+                    ageAndMaturityAsOfDate: search.ageAndMaturityAsOfDate ?? flockMetricsDate(),
                 });
                 if (!parsed.success) throw new ManagementApiError('VALIDATION_ERROR');
                 const input = parsed.data;
@@ -45,6 +50,7 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                 if (input.search) query.set('search', input.search);
                 if (input.birdType) query.set('birdType', input.birdType);
                 if (input.isActive !== undefined) query.set('isActive', String(input.isActive));
+                if (input.maturityState) query.set('maturityState', input.maturityState);
                 const result = await managementApi(
                     `${flockApiPath(scope)}?${query}`,
                     flockListResponseSchema,
@@ -53,7 +59,6 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                     applicationHref(path, scope.organization, scope.farm);
                 const pageHref = (page: number) => {
                     const value = new URLSearchParams(query);
-                    value.delete('ageAndMaturityAsOfDate');
                     value.set('page', String(page));
                     return href('/app/flocks') + '&' + value;
                 };
@@ -99,6 +104,11 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                         render: (flock) => flock.metrics.liveBirdCount,
                     },
                     {
+                        key: 'mortality',
+                        header: 'Cumulative mortality',
+                        render: (flock) => <FlockMortality metrics={flock.metrics} />,
+                    },
+                    {
                         key: 'age',
                         header: 'Age / maturity',
                         render: (flock) => <FlockAge flock={flock} />,
@@ -113,12 +123,14 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                     input.search ||
                     input.birdType ||
                     input.isActive !== undefined ||
+                    input.maturityState ||
                     input.page > 1,
                 );
                 return (
                     <MasterDataList
+                        key={`${scope.organization}:${scope.farm}:${query}`}
                         title="Flocks"
-                        description={`Flocks at ${context.farm!.name}. Age and maturity as of ${input.ageAndMaturityAsOfDate} (UTC today); populations include all current postings.`}
+                        description={`Flocks at ${context.farm!.name}. Age and maturity as of ${input.ageAndMaturityAsOfDate} (UTC); population and mortality include all current postings.`}
                         caption="Farm flocks and authoritative metrics"
                         items={result.data}
                         getRowKey={(flock) => flock.id}
@@ -141,6 +153,8 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                                         ? undefined
                                         : String(input.isActive),
                                 birdType: input.birdType,
+                                maturityState: input.maturityState,
+                                ageAndMaturityAsOfDate: input.ageAndMaturityAsOfDate,
                             },
                         }}
                         filters={
@@ -156,6 +170,11 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                                 <input type="hidden" name="farm" value={scope.farm} />
                                 <input type="hidden" name="search" value={input.search ?? ''} />
                                 <input type="hidden" name="pageSize" value={input.pageSize} />
+                                <input
+                                    type="hidden"
+                                    name="ageAndMaturityAsOfDate"
+                                    value={input.ageAndMaturityAsOfDate}
+                                />
                                 <div>
                                     <label
                                         htmlFor="flock-state"
@@ -176,6 +195,28 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                                         <option value="">All flocks</option>
                                         <option value="true">Active</option>
                                         <option value="false">Closed</option>
+                                    </select>
+                                </div>
+                                <div className="min-w-0">
+                                    <label
+                                        htmlFor="flock-maturity"
+                                        className="mb-2 block text-sm font-medium"
+                                    >
+                                        Maturity
+                                    </label>
+                                    <select
+                                        id="flock-maturity"
+                                        name="maturityState"
+                                        defaultValue={input.maturityState ?? ''}
+                                        aria-describedby="flock-maturity-help"
+                                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                    >
+                                        <option value="">All maturity states</option>
+                                        {FLOCK_MATURITY_STATES.map((state) => (
+                                            <option key={state} value={state}>
+                                                {flockMaturityLabels[state]}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div className="min-w-0">
@@ -203,6 +244,12 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                                 >
                                     Clear filters
                                 </Link>
+                                <p
+                                    id="flock-maturity-help"
+                                    className="w-full text-xs text-muted-foreground"
+                                >
+                                    {flockMaturityExplanation}
+                                </p>
                             </form>
                         }
                         emptyTitle={filtered ? 'No flocks match this view.' : 'No flocks yet.'}

@@ -1,5 +1,6 @@
-import type { FlockWithMetrics, InventoryItem } from '@ancastle/types';
-import { flockMaturityLabel } from '@/lib/management/flocks';
+import type { ReactNode } from 'react';
+import type { FlockWithMetrics, FlockMetrics, InventoryItem } from '@ancastle/types';
+import { flockMaturityLabel, flockMaturityExplanation } from '@/lib/management/flocks';
 
 export function FlockStatus({ isActive }: { isActive: boolean }) {
     return (
@@ -23,7 +24,36 @@ export function FlockAge({ flock }: { flock: FlockWithMetrics }) {
             <p>
                 {flock.metrics.ageDays} days ({flock.metrics.ageWeeks} weeks)
             </p>
-            <p className="text-xs text-muted-foreground">{flockMaturityLabel(flock.metrics)}</p>
+            <FlockMaturity metrics={flock.metrics} />
+        </div>
+    );
+}
+
+export function FlockMaturity({ metrics }: { metrics: FlockMetrics }) {
+    return (
+        <div className="mt-1 space-y-1">
+            <span
+                role="status"
+                className="inline-flex rounded-full border bg-muted/50 px-2.5 py-1 text-xs font-medium text-foreground"
+            >
+                {flockMaturityLabel(metrics)}
+            </span>
+            {metrics.daysToMaturity !== null && (
+                <p className="text-xs text-muted-foreground">
+                    {metrics.daysToMaturity} days remaining until expected maturity
+                </p>
+            )}
+        </div>
+    );
+}
+
+export function FlockMortality({ metrics }: { metrics: FlockMetrics }) {
+    return (
+        <div className="tabular-nums">
+            <p>{metrics.cumulativeMortality} deaths</p>
+            <p className="text-xs text-muted-foreground">
+                {metrics.mortalityPercentage}% of starting population
+            </p>
         </div>
     );
 }
@@ -36,7 +66,7 @@ export function FlockDetails({
     feedItems?: ReadonlyMap<string, InventoryItem>;
 }) {
     const { metrics } = flock;
-    const values = [
+    const values: [string, ReactNode][] = [
         ['Flock code', flock.code],
         ['Bird type', flock.birdType ?? 'Not provided'],
         ['Placement date', flock.placementDate],
@@ -46,7 +76,7 @@ export function FlockDetails({
         ['Cumulative mortality', metrics.cumulativeMortality],
         ['Mortality percentage', `${metrics.mortalityPercentage}%`],
         ['Age', `${metrics.ageDays} days (${metrics.ageWeeks} weeks)`],
-        ['Maturity', flockMaturityLabel(metrics)],
+        ['Maturity', <FlockMaturity key="maturity" metrics={metrics} />],
     ];
     return (
         <section
@@ -68,15 +98,22 @@ export function FlockDetails({
                     </div>
                 ))}
             </dl>
+            <p className="text-xs text-muted-foreground">{flockMaturityExplanation}</p>
             <div>
                 <h2 className="text-sm font-medium">Cumulative feed usage</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                    Totals are kept separate for each feed item and unit.
+                </p>
                 {metrics.cumulativeFeedUsage.length ? (
                     <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
                         {metrics.cumulativeFeedUsage.map((feed) => (
-                            <li key={feed.inventoryItemId} className="wrap-break-word">
+                            <li
+                                key={`${feed.inventoryItemId}:${feed.unit}`}
+                                className="wrap-break-word"
+                            >
                                 {feed.quantity} {feed.unit} ·{' '}
                                 {feedItems?.get(feed.inventoryItemId)?.name ??
-                                    'Feed item unavailable'}
+                                    `Feed item ${feed.inventoryItemId}`}
                             </li>
                         ))}
                     </ul>
