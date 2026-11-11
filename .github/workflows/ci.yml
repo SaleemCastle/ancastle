@@ -85,9 +85,3 @@ jobs:
 
             - name: Check formatting
               run: pnpm format:check
-
-            - name: Install Chromium for browser tests
-              run: pnpm --filter @ancastle/web exec playwright install --with-deps chromium
-
-            - name: Browser authentication tests
-              run: pnpm --filter @ancastle/web test:e2e

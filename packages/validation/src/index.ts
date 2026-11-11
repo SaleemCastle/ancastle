@@ -3,6 +3,7 @@ import {
     INVENTORY_CATEGORIES,
     INVENTORY_UNITS,
     INVENTORY_MOVEMENT_REASONS,
+    FLOCK_MATURITY_STATES,
 } from '@ancastle/types';
 import { z } from 'zod';
 import { activeStatusQuerySchema, paginationQuerySchema } from './pagination.js';
@@ -259,6 +260,7 @@ export const flockMetricsQuerySchema = z
 export const flockApiQuerySchema = flockQuerySchema
     .extend({
         ageAndMaturityAsOfDate: flockDateSchema,
+        maturityState: z.enum(FLOCK_MATURITY_STATES).optional(),
     })
     .strict();
 export const poultryHistoryQuerySchema = paginationQuerySchema;

@@ -43,6 +43,26 @@ const historyOrder = [
   { id: 'desc' },
 ] as const;
 
+/** Mirror M4-05's existing calendar-date boundaries before counting/paginating.
+ * Lifecycle is independent: closed flocks may match any maturity state.
+ */
+function maturityWhere(input: FlockApiQuery): Prisma.FlockWhereInput {
+  switch (input.maturityState) {
+    case 'BEFORE_EXPECTED_MATURITY':
+      return {
+        expectedMaturityDate: { gt: new Date(input.ageAndMaturityAsOfDate) },
+      };
+    case 'AT_OR_PAST_EXPECTED_MATURITY':
+      return {
+        expectedMaturityDate: { lte: new Date(input.ageAndMaturityAsOfDate) },
+      };
+    case 'NO_EXPECTED_MATURITY_DATE':
+      return { expectedMaturityDate: null };
+    default:
+      return {};
+  }
+}
+
 @Injectable()
 export class FlocksService {
   constructor(
@@ -61,6 +81,7 @@ export class FlocksService {
       organizationId: context.organizationId,
       farmId,
       farm: this.farms.farmWhere(context),
+      ...maturityWhere(input),
       ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
       ...(input.birdType ? { birdType: input.birdType } : {}),
       ...(input.search

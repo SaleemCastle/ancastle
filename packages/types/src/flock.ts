@@ -26,6 +26,13 @@ export interface Flock {
 export type FlockResponse = ApiResponse<Flock>;
 export type FlockListResponse = PaginatedResponse<Flock>;
 
+export const FLOCK_MATURITY_STATES = [
+    'BEFORE_EXPECTED_MATURITY',
+    'AT_OR_PAST_EXPECTED_MATURITY',
+    'NO_EXPECTED_MATURITY_DATE',
+] as const;
+export type FlockMaturityState = (typeof FLOCK_MATURITY_STATES)[number];
+
 export interface FlockMetrics {
     /** Calendar date for age/maturity only; ledger totals reflect all current postings. */
     ageAndMaturityAsOfDate: string;
@@ -37,8 +44,7 @@ export interface FlockMetrics {
     ageDays: number;
     ageWeeks: number;
     daysToMaturity: number | null;
-    maturityState:
-        'BEFORE_EXPECTED_MATURITY' | 'AT_OR_PAST_EXPECTED_MATURITY' | 'NO_EXPECTED_MATURITY_DATE';
+    maturityState: FlockMaturityState;
     cumulativeFeedUsage: {
         inventoryItemId: string;
         unit: InventoryUnit;
