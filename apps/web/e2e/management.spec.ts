@@ -863,16 +863,16 @@ test('keeps customer management usable across mobile and desktop layouts', async
             },
             main: main
                 ? {
-                    scrollWidth: main.scrollWidth,
-                    clientWidth: main.clientWidth,
-                }
+                      scrollWidth: main.scrollWidth,
+                      clientWidth: main.clientWidth,
+                  }
                 : null,
             tableContainer: scrollContainer
                 ? {
-                    scrollWidth: scrollContainer.scrollWidth,
-                    clientWidth: scrollContainer.clientWidth,
-                    overflowX: getComputedStyle(scrollContainer).overflowX,
-                }
+                      scrollWidth: scrollContainer.scrollWidth,
+                      clientWidth: scrollContainer.clientWidth,
+                      overflowX: getComputedStyle(scrollContainer).overflowX,
+                  }
                 : null,
         };
     });
