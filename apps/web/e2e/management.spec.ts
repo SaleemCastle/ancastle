@@ -95,7 +95,11 @@ test('manages farm flocks through real APIs with responsive views and read-only 
     await expect(
         page.getByRole('heading', { name: 'Updated placement', exact: true }),
     ).toBeVisible();
-    await expect(page.getByText('No expected maturity date', { exact: true })).toBeVisible();
+    await expect(
+        page
+            .getByRole('region', { name: 'Flock details' })
+            .getByText('No expected maturity date', { exact: true }),
+    ).toBeVisible();
     const lifecycle = page.getByRole('form', { name: 'Flock lifecycle' });
     await lifecycle.getByRole('button', { name: 'Close flock', exact: true }).click();
     await expect(page.getByRole('status', { name: 'Status: Closed' })).toBeVisible();
@@ -859,16 +863,16 @@ test('keeps customer management usable across mobile and desktop layouts', async
             },
             main: main
                 ? {
-                      scrollWidth: main.scrollWidth,
-                      clientWidth: main.clientWidth,
-                  }
+                    scrollWidth: main.scrollWidth,
+                    clientWidth: main.clientWidth,
+                }
                 : null,
             tableContainer: scrollContainer
                 ? {
-                      scrollWidth: scrollContainer.scrollWidth,
-                      clientWidth: scrollContainer.clientWidth,
-                      overflowX: getComputedStyle(scrollContainer).overflowX,
-                  }
+                    scrollWidth: scrollContainer.scrollWidth,
+                    clientWidth: scrollContainer.clientWidth,
+                    overflowX: getComputedStyle(scrollContainer).overflowX,
+                }
                 : null,
         };
     });
