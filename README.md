@@ -118,6 +118,15 @@ Follow the [M1 developer workflow](docs/m1-workflow.md) for fresh migrations,
 first-owner provisioning, session behavior, permissions, tenant/farm scoping and
 end-to-end validation. The default seed creates organization/farm data only.
 
+## M4 Poultry and Flock Operations
+
+Follow the [M4 poultry workflow](docs/m4-workflow.md) for flock ownership,
+permissions, public endpoints, mortality/feed ledgers, derived indicators and
+reproducible local validation. The [M4 validation report](docs/audits/m4-12-poultry-validation.md)
+records executed checks and limitations; the [M4-11 coverage audit](docs/audits/m4-11-poultry-coverage.md)
+maps existing regression coverage. Reversal services are internal; there are no
+public poultry reversal routes or correction controls.
+
 ## Getting Started
 
 ### 1. Clone the Repository
