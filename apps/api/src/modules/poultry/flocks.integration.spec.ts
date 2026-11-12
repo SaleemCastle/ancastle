@@ -11,12 +11,16 @@ import { TokenService } from '../auth/token.service.js';
 import { OrganizationContext } from '../authorization/organization-context.js';
 import { InventoryStockService } from '../inventory/inventory-stock.service.js';
 import { PoultryModule } from './poultry.module.js';
+import { MortalityService } from './mortality.service.js';
+import { FeedUsageService } from './feed-usage.service.js';
 
 describe('Flock operations API (HTTP + PostgreSQL)', () => {
   let database: Awaited<ReturnType<typeof temporaryDatabase>>;
   let app: INestApplication;
   let prisma: PrismaService;
   let stock: InventoryStockService;
+  let mortality: MortalityService;
+  let feed: FeedUsageService;
   let context: OrganizationContext;
   let org: string,
     foreignOrg: string,
@@ -88,6 +92,8 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
       .useValue(prisma)
       .compile();
     stock = module.get(InventoryStockService);
+    mortality = module.get(MortalityService);
+    feed = module.get(FeedUsageService);
     for (const role of Object.keys(users) as (keyof typeof users)[]) {
       tokens[role] = await module
         .get(TokenService)
@@ -802,6 +808,215 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
     ).toBe(1);
     expect(await prisma.feedUsage.count({ where: { flockId: flock } })).toBe(1);
   }, 20_000);
+
+  it('keeps populated flocks, histories and feed stock independent across two assigned farms', async () => {
+    await prisma.farmAccessAssignment.create({
+      data: {
+        organizationId: org,
+        farmId: otherFarm,
+        membershipId: memberships.staff,
+      },
+    });
+    const neighbour = await prisma.flock.create({
+      data: {
+        ...definition,
+        organizationId: org,
+        farmId: farm,
+        code: 'FLK-000003',
+        placementDate: new Date(definition.placementDate),
+        expectedMaturityDate: new Date(definition.expectedMaturityDate),
+      },
+    });
+    await stock.postMovement(context, {
+      farmId: otherFarm,
+      inventoryItemId: item,
+      quantity: new Prisma.Decimal('7'),
+      reason: 'RECEIPT',
+      occurredAt: new Date(occurredAt),
+    });
+    for (const [selectedFarm, id, deathCount, quantity] of [
+      [farm, flock, 3, '1.125'],
+      [farm, neighbour.id, 5, '2'],
+      [otherFarm, otherFlock, 9, '3'],
+    ] as const) {
+      const base = `${path(selectedFarm)}/${id}`;
+      const event = await api()
+        .post(`${base}/mortality`)
+        .set('Authorization', auth('staff'))
+        .send({ deathCount, occurredAt })
+        .expect(201);
+      const usage = await api()
+        .post(`${base}/feed-usage`)
+        .set('Authorization', auth('staff'))
+        .send({ inventoryItemId: item, quantity, occurredAt })
+        .expect(201);
+      for (const [suffix, original] of [
+        ['mortality', event.body.data],
+        ['feed-usage', usage.body.data],
+      ] as const) {
+        const history = await api()
+          .get(`${base}/${suffix}`)
+          .set('Authorization', auth('staff'))
+          .expect(200);
+        expect(history.body.data).toEqual([original]);
+        expect(history.body.meta.totalItems).toBe(1);
+        expect(original.farmId).toBe(selectedFarm);
+        expect(original.flockId).toBe(id);
+      }
+      const detail = await api()
+        .get(base)
+        .query(date)
+        .set('Authorization', auth('staff'))
+        .expect(200);
+      expect(detail.body.data.metrics).toMatchObject({
+        liveBirdCount: 100 - deathCount,
+        cumulativeMortality: deathCount,
+        cumulativeFeedUsage: [{ inventoryItemId: item, unit: 'KG', quantity }],
+      });
+    }
+    for (const [selectedFarm, expectedIds] of [
+      [farm, [flock, neighbour.id]],
+      [otherFarm, [otherFlock]],
+    ] as const) {
+      const list = await api()
+        .get(path(selectedFarm))
+        .query(date)
+        .set('Authorization', auth('staff'))
+        .expect(200);
+      expect(list.body.meta.totalItems).toBe(expectedIds.length);
+      expect(
+        list.body.data.map((entry: { id: string }) => entry.id).sort(),
+      ).toEqual([...expectedIds].sort());
+    }
+    expect((await stock.getStockOnHand(context, farm, item)).toString()).toBe(
+      '6.875',
+    );
+    expect(
+      (await stock.getStockOnHand(context, otherFarm, item)).toString(),
+    ).toBe('4');
+  });
+
+  it('keeps scoped originals and reversals visible in paginated poultry histories', async () => {
+    const event = (await postMortality().expect(201)).body.data;
+    const usage = (await postFeed().expect(201)).body.data;
+    const correction = {
+      occurredAt: new Date('2026-11-21T12:00:00.000Z'),
+      note: 'Correction',
+    };
+    await expect(
+      mortality.reverse(context, otherFarm, otherFlock, event.id, correction),
+    ).rejects.toMatchObject({ code: 'MORTALITY_NOT_FOUND' });
+    await expect(
+      feed.reverse(context, otherFarm, usage.id, correction),
+    ).rejects.toMatchObject({ code: 'FEED_USAGE_SCOPE_NOT_FOUND' });
+    expect(
+      await prisma.mortalityEvent.count({ where: { organizationId: org } }),
+    ).toBe(1);
+    expect(
+      await prisma.feedUsage.count({ where: { organizationId: org } }),
+    ).toBe(1);
+    expect(
+      await prisma.inventoryMovement.count({ where: { organizationId: org } }),
+    ).toBe(2);
+    expect(
+      (await stock.getStockOnHand(context, otherFarm, item)).toString(),
+    ).toBe('0');
+    const reversedEvent = await mortality.reverse(
+      context,
+      farm,
+      flock,
+      event.id,
+      correction,
+    );
+    const reversedUsage = await feed.reverse(
+      context,
+      farm,
+      usage.id,
+      correction,
+    );
+    for (const [suffix, original, reversal, link] of [
+      ['mortality', event, reversedEvent, 'reversesEventId'],
+      ['feed-usage', usage, reversedUsage, 'reversesUsageId'],
+    ] as const) {
+      for (const page of [1, 2]) {
+        const history = await api()
+          .get(`${path()}/${flock}/${suffix}`)
+          .query({ page, pageSize: 1 })
+          .set('Authorization', auth('staff'))
+          .expect(200);
+        expect(history.body.meta).toEqual({
+          page,
+          pageSize: 1,
+          totalItems: 2,
+          totalPages: 2,
+        });
+        expect(history.body.data).toHaveLength(1);
+        if (page === 1) {
+          expect(history.body.data[0]).toMatchObject({
+            id: reversal.id,
+            [link]: original.id,
+            actorUserId: users.admin,
+            note: correction.note,
+            occurredAt: correction.occurredAt.toISOString(),
+          });
+        } else {
+          expect(history.body.data).toEqual([original]);
+        }
+      }
+    }
+    const detail = await api()
+      .get(`${path()}/${flock}`)
+      .query(date)
+      .set('Authorization', auth('staff'))
+      .expect(200);
+    expect(detail.body.data.metrics).toMatchObject({
+      liveBirdCount: 100,
+      cumulativeMortality: 0,
+      mortalityPercentage: '0',
+      cumulativeFeedUsage: [
+        { inventoryItemId: item, unit: 'KG', quantity: '0' },
+      ],
+    });
+    expect((await stock.getStockOnHand(context, farm, item)).toString()).toBe(
+      '10',
+    );
+    const compensation = await prisma.inventoryMovement.findUniqueOrThrow({
+      where: { id: reversedUsage.inventoryMovementId },
+    });
+    expect(compensation).toMatchObject({ farmId: farm, reason: 'ADJUSTMENT' });
+    expect(compensation.quantity.toString()).toBe('1.125');
+  });
+
+  it('serializes a starting-population edit against mortality posting', async () => {
+    const [edit, posting] = await Promise.all([
+      api()
+        .patch(`${path()}/${flock}`)
+        .set('Authorization', auth())
+        .send({ startingBirdCount: 40 }),
+      postMortality(60),
+    ]);
+    expect([
+      [200, 400],
+      [400, 201],
+    ]).toContainEqual([edit.status, posting.status]);
+    const edited = edit.status === 200;
+    expect((edited ? posting : edit).body.error.code).toBe(
+      'FLOCK_OVER_MORTALITY',
+    );
+    const detail = await api()
+      .get(`${path()}/${flock}`)
+      .query(date)
+      .set('Authorization', auth('staff'))
+      .expect(200);
+    expect(detail.body.data.startingBirdCount).toBe(edited ? 40 : 100);
+    expect(detail.body.data.metrics).toMatchObject({
+      cumulativeMortality: edited ? 0 : 60,
+      liveBirdCount: 40,
+    });
+    expect(
+      await prisma.mortalityEvent.count({ where: { flockId: flock } }),
+    ).toBe(edited ? 0 : 1);
+  });
 
   it('rejects inactive membership, user, organization, farm and assignment states', async () => {
     const read = () =>
