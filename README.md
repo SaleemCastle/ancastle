@@ -127,6 +127,13 @@ records executed checks and limitations; the [M4-11 coverage audit](docs/audits/
 maps existing regression coverage. Reversal services are internal; there are no
 public poultry reversal routes or correction controls.
 
+## M5 Sales and Fulfilment Architecture Proposal
+
+The [M5-01 architecture decision](docs/m5-01-sales-fulfilment-architecture.md)
+proposes organization-owned orders, farm-scoped fulfilments, separate poultry
+depletion and produce inventory integration. It is pending review; its models,
+permissions and API routes are proposals, not implemented capabilities.
+
 ## Getting Started
 
 ### 1. Clone the Repository
