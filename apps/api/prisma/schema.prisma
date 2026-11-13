@@ -50,6 +50,15 @@ model Organization {
   flocks                  Flock[]
   mortalityEvents         MortalityEvent[]
   feedUsages              FeedUsage[]
+  salesProducts           SalesProduct[]
+  poultryProductSources   PoultryProductSource[]
+  orders                  Order[]
+  orderLines              OrderLine[]
+  orderEvents             OrderEvent[]
+  fulfilments             Fulfilment[]
+  fulfilmentLines         FulfilmentLine[]
+  flockSaleDepletions     FlockSaleDepletion[]
+  fulfilmentCommands      FulfilmentCommand[]
 
   @@map("organizations")
 }
@@ -70,6 +79,12 @@ model Farm {
   flocks             Flock[]
   mortalityEvents    MortalityEvent[]
   feedUsages         FeedUsage[]
+
+  poultryProductSources PoultryProductSource[]
+  fulfilments           Fulfilment[]
+  fulfilmentLines       FulfilmentLine[]
+  flockSaleDepletions   FlockSaleDepletion[]
+  fulfilmentCommands    FulfilmentCommand[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -93,11 +108,17 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships        OrganizationMembership[]
-  authSessions       AuthSession[]
-  inventoryMovements InventoryMovement[]
-  mortalityEvents    MortalityEvent[]
-  feedUsages         FeedUsage[]
+  memberships           OrganizationMembership[]
+  authSessions          AuthSession[]
+  inventoryMovements    InventoryMovement[]
+  mortalityEvents       MortalityEvent[]
+  feedUsages            FeedUsage[]
+  poultryProductSources PoultryProductSource[]
+  orders                Order[]
+  orderEvents           OrderEvent[]
+  fulfilments           Fulfilment[]
+  flockSaleDepletions   FlockSaleDepletion[]
+  fulfilmentCommands    FulfilmentCommand[]
 
   @@map("users")
 }
@@ -118,6 +139,12 @@ model OrganizationMembership {
   farmAccessAssignments FarmAccessAssignment[]
   mortalityEvents       MortalityEvent[]
   feedUsages            FeedUsage[]
+  poultryProductSources PoultryProductSource[]
+  orders                Order[]
+  orderEvents           OrderEvent[]
+  fulfilments           Fulfilment[]
+  flockSaleDepletions   FlockSaleDepletion[]
+  fulfilmentCommands    FulfilmentCommand[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, userId])
@@ -181,6 +208,9 @@ model Customer {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
+  orders Order[]
+
+  @@unique([organizationId, id])
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([organizationId, isActive])
@@ -230,6 +260,9 @@ model InventoryItem {
 
   inventoryMovements InventoryMovement[]
   feedUsages         FeedUsage[]
+  salesProducts      SalesProduct[]
+  orderLines         OrderLine[]
+  fulfilmentLines    FulfilmentLine[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -257,7 +290,8 @@ model InventoryMovement {
   inventoryItem InventoryItem @relation(fields: [organizationId, inventoryItemId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
   actorUser     User          @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
-  feedUsages FeedUsage[]
+  feedUsages      FeedUsage[]
+  fulfilmentLines FulfilmentLine[]
 
   @@unique([organizationId, farmId, inventoryItemId, id])
   @@index([organizationId, farmId, inventoryItemId, occurredAt])
@@ -291,10 +325,13 @@ model Flock {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  farm            Farm             @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
-  mortalityEvents MortalityEvent[]
-  feedUsages      FeedUsage[]
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm                  Farm                   @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  mortalityEvents       MortalityEvent[]
+  feedUsages            FeedUsage[]
+  poultryProductSources PoultryProductSource[]
+  fulfilmentLines       FulfilmentLine[]
+  saleDepletions        FlockSaleDepletion[]
 
   @@unique([organizationId, farmId, id])
   @@unique([organizationId, code])
@@ -373,4 +410,314 @@ model FeedUsage {
   @@index([organizationId, inventoryItemId])
   @@index([actorUserId])
   @@map("feed_usages")
+}
+
+enum SalesProductKind {
+  POULTRY
+  PRODUCE
+}
+
+enum OrderState {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+enum SaleType {
+  CASH
+  CREDIT
+}
+
+enum OrderEventAction {
+  CREATED
+  AMENDED
+  CONFIRMED
+  CANCELLED
+  FULFILMENT_POSTED
+  FULFILMENT_REVERSED
+}
+
+enum FulfilmentKind {
+  POSTING
+  REVERSAL
+}
+
+enum FulfilmentOperation {
+  POST
+  REVERSE
+}
+
+// Definitions and eligibility are not physical stock or reservations.
+model SalesProduct {
+  id              String           @id @default(uuid()) @db.Uuid
+  organizationId  String           @db.Uuid
+  code            String
+  name            String
+  kind            SalesProductKind
+  unit            InventoryUnit
+  inventoryItemId String?          @db.Uuid
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem  InventoryItem?         @relation(fields: [organizationId, inventoryItemId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  poultrySources PoultryProductSource[]
+  orderLines     OrderLine[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId, isActive, kind])
+  @@index([organizationId, inventoryItemId])
+  @@map("sales_products")
+}
+
+model PoultryProductSource {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @db.Uuid
+  productId      String   @db.Uuid
+  farmId         String   @db.Uuid
+  flockId        String   @db.Uuid
+  actorUserId    String   @db.Uuid
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  product         SalesProduct           @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  farm            Farm                   @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  flock           Flock                  @relation(fields: [organizationId, farmId, flockId], references: [organizationId, farmId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser       User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership OrganizationMembership @relation(fields: [organizationId, actorUserId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organizationId, productId, farmId, flockId], map: "poultry_sources_product_flock_key")
+  @@index([organizationId, farmId, productId, isActive], map: "poultry_sources_scope_active_idx")
+  @@index([organizationId, farmId, flockId])
+  @@index([actorUserId])
+  @@map("poultry_product_sources")
+}
+
+// Commercial scope is the organization, never a supplying farm. Amounts and
+// fulfilment progress are derived. Credit days are intent; M6 owns due dates.
+model Order {
+  id                    String     @id @default(uuid()) @db.Uuid
+  organizationId        String     @db.Uuid
+  code                  String
+  customerId            String     @db.Uuid
+  commercialState       OrderState @default(DRAFT)
+  version               Int        @default(1)
+  currency              String     @default("JMD") @db.VarChar(3)
+  saleType              SaleType
+  creditTermDays        Int?
+  customerCode          String
+  customerName          String
+  customerContactPerson String?
+  customerPhone         String?
+  customerEmail         String?
+  customerAddress       String?
+  actorUserId           String     @db.Uuid
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  customer        Customer               @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser       User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership OrganizationMembership @relation(fields: [organizationId, actorUserId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+  lines           OrderLine[]
+  events          OrderEvent[]
+  fulfilments     Fulfilment[]
+  fulfilmentLines FulfilmentLine[]
+  commands        FulfilmentCommand[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([organizationId, customerId])
+  @@index([organizationId, commercialState, createdAt, id], map: "orders_scope_state_created_idx")
+  @@index([actorUserId])
+  @@map("orders")
+}
+
+// Source identity is internal; commercial DTOs must omit inventoryItemId.
+model OrderLine {
+  id              String           @id @default(uuid()) @db.Uuid
+  organizationId  String           @db.Uuid
+  orderId         String           @db.Uuid
+  lineNumber      Int
+  productId       String           @db.Uuid
+  productCode     String
+  productName     String
+  kind            SalesProductKind
+  unit            InventoryUnit
+  inventoryItemId String?          @db.Uuid
+  orderedQuantity Decimal          @db.Decimal(18, 3)
+  unitPrice       Decimal          @db.Decimal(19, 4)
+  isRemoved       Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  order         Order            @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  product       SalesProduct     @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem InventoryItem?   @relation(fields: [organizationId, inventoryItemId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  allocations   FulfilmentLine[]
+
+  @@unique([organizationId, orderId, id])
+  @@unique([organizationId, orderId, lineNumber])
+  @@index([organizationId, productId])
+  @@index([organizationId, inventoryItemId])
+  @@map("order_lines")
+}
+
+model OrderEvent {
+  id                String           @id @default(uuid()) @db.Uuid
+  organizationId    String           @db.Uuid
+  orderId           String           @db.Uuid
+  action            OrderEventAction
+  orderVersion      Int
+  actorUserId       String           @db.Uuid
+  reason            String?
+  // Bounded before/after commercial facts, not a public operational-source DTO.
+  commercialChanges Json
+  createdAt         DateTime         @default(now())
+
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  order           Order                  @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser       User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership OrganizationMembership @relation(fields: [organizationId, actorUserId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organizationId, orderId, orderVersion])
+  @@index([organizationId, orderId, createdAt, id])
+  @@index([actorUserId])
+  @@map("order_events")
+}
+
+model Fulfilment {
+  id                    String         @id @default(uuid()) @db.Uuid
+  organizationId        String         @db.Uuid
+  farmId                String         @db.Uuid
+  orderId               String         @db.Uuid
+  code                  String
+  kind                  FulfilmentKind
+  actorUserId           String         @db.Uuid
+  occurredAt            DateTime
+  createdAt             DateTime       @default(now())
+  note                  String?
+  reference             String?
+  reason                String?
+  postingErrorConfirmed Boolean?
+  reversesFulfilmentId  String?        @unique @db.Uuid
+
+  organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm               Farm                   @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  order              Order                  @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser          User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership    OrganizationMembership @relation(fields: [organizationId, actorUserId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+  reversesFulfilment Fulfilment?            @relation("FulfilmentReversal", fields: [organizationId, farmId, orderId, reversesFulfilmentId], references: [organizationId, farmId, orderId, id], onDelete: Restrict, onUpdate: Restrict)
+  reversals          Fulfilment[]           @relation("FulfilmentReversal")
+  lines              FulfilmentLine[]
+  commands           FulfilmentCommand[]
+
+  @@unique([organizationId, farmId, orderId, id], map: "fulfilments_scope_id_key")
+  @@unique([organizationId, code])
+  @@index([organizationId, farmId, orderId, occurredAt, createdAt, id], map: "fulfilments_scope_history_idx")
+  @@index([organizationId, orderId])
+  @@index([actorUserId])
+  @@map("fulfilments")
+}
+
+model FulfilmentLine {
+  id                  String           @id @default(uuid()) @db.Uuid
+  organizationId      String           @db.Uuid
+  farmId              String           @db.Uuid
+  orderId             String           @db.Uuid
+  fulfilmentId        String           @db.Uuid
+  orderLineId         String           @db.Uuid
+  kind                SalesProductKind
+  unit                InventoryUnit
+  quantity            Decimal          @db.Decimal(18, 3)
+  sourceCode          String
+  flockId             String?          @db.Uuid
+  inventoryItemId     String?          @db.Uuid
+  inventoryMovementId String?          @unique @db.Uuid
+  reversesLineId      String?          @unique @db.Uuid
+  occurredAt          DateTime
+  createdAt           DateTime         @default(now())
+
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm              Farm                 @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  order             Order                @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  orderLine         OrderLine            @relation(fields: [organizationId, orderId, orderLineId], references: [organizationId, orderId, id], onDelete: Restrict, onUpdate: Restrict)
+  fulfilment        Fulfilment           @relation(fields: [organizationId, farmId, orderId, fulfilmentId], references: [organizationId, farmId, orderId, id], onDelete: Restrict, onUpdate: Restrict)
+  flock             Flock?               @relation(fields: [organizationId, farmId, flockId], references: [organizationId, farmId, id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryItem     InventoryItem?       @relation(fields: [organizationId, inventoryItemId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  inventoryMovement InventoryMovement?   @relation(fields: [organizationId, farmId, inventoryItemId, inventoryMovementId], references: [organizationId, farmId, inventoryItemId, id], onDelete: Restrict, onUpdate: Restrict)
+  reversesLine      FulfilmentLine?      @relation("FulfilmentLineReversal", fields: [organizationId, farmId, orderId, orderLineId, reversesLineId], references: [organizationId, farmId, orderId, orderLineId, id], onDelete: Restrict, onUpdate: Restrict)
+  reversals         FulfilmentLine[]     @relation("FulfilmentLineReversal")
+  depletions        FlockSaleDepletion[]
+
+  @@unique([organizationId, farmId, orderId, orderLineId, id], map: "fulfilment_lines_scope_id_key")
+  @@unique([organizationId, farmId, flockId, id], map: "fulfilment_lines_flock_id_key")
+  @@unique([fulfilmentId, orderLineId, flockId], map: "fulfilment_lines_poultry_source_key")
+  @@unique([fulfilmentId, orderLineId, inventoryItemId], map: "fulfilment_lines_produce_source_key")
+  @@index([organizationId, orderId, orderLineId])
+  @@index([organizationId, farmId, flockId, occurredAt, id], map: "fulfilment_lines_flock_history_idx")
+  @@index([organizationId, farmId, inventoryItemId, occurredAt, id], map: "fulfilment_lines_stock_history_idx")
+  @@map("fulfilment_lines")
+}
+
+// Separate immutable ledger: never mortality and never inventory stock.
+model FlockSaleDepletion {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @db.Uuid
+  farmId              String   @db.Uuid
+  flockId             String   @db.Uuid
+  fulfilmentLineId    String   @unique @db.Uuid
+  birdCount           Int
+  actorUserId         String   @db.Uuid
+  occurredAt          DateTime
+  createdAt           DateTime @default(now())
+  reversesDepletionId String?  @unique @db.Uuid
+
+  organization      Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm              Farm                   @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  flock             Flock                  @relation(fields: [organizationId, farmId, flockId], references: [organizationId, farmId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser         User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership   OrganizationMembership @relation(fields: [organizationId, actorUserId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+  fulfilmentLine    FulfilmentLine         @relation(fields: [organizationId, farmId, flockId, fulfilmentLineId], references: [organizationId, farmId, flockId, id], onDelete: Restrict, onUpdate: Restrict)
+  reversesDepletion FlockSaleDepletion?    @relation("DepletionReversal", fields: [organizationId, farmId, flockId, reversesDepletionId], references: [organizationId, farmId, flockId, id], onDelete: Restrict, onUpdate: Restrict)
+  reversals         FlockSaleDepletion[]   @relation("DepletionReversal")
+
+  @@unique([organizationId, farmId, flockId, id], map: "flock_sale_depletions_scope_id_key")
+  @@index([organizationId, farmId, flockId, occurredAt, id], map: "flock_sale_depletions_history_idx")
+  @@index([actorUserId])
+  @@map("flock_sale_depletions")
+}
+
+// Only committed successes: no PROCESSING state, expiry or duplicated payload.
+model FulfilmentCommand {
+  id             String              @id @default(uuid()) @db.Uuid
+  organizationId String              @db.Uuid
+  farmId         String              @db.Uuid
+  orderId        String              @db.Uuid
+  operation      FulfilmentOperation
+  key            String              @db.Uuid
+  requestHash    String              @db.VarChar(64)
+  hashVersion    Int
+  actorUserId    String              @db.Uuid
+  fulfilmentId   String              @unique @db.Uuid
+  orderVersion   Int
+  responseStatus Int                 @default(201)
+  createdAt      DateTime            @default(now())
+
+  organization    Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  farm            Farm                   @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  order           Order                  @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  fulfilment      Fulfilment             @relation(fields: [organizationId, farmId, orderId, fulfilmentId], references: [organizationId, farmId, orderId, id], onDelete: Restrict, onUpdate: Restrict)
+  actorUser       User                   @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actorMembership OrganizationMembership @relation(fields: [organizationId, actorUserId], references: [organizationId, userId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([organizationId, farmId, operation, key], map: "fulfilment_commands_scope_key")
+  @@index([organizationId, orderId])
+  @@index([actorUserId])
+  @@map("fulfilment_commands")
 }
