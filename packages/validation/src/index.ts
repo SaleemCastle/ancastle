@@ -349,3 +349,16 @@ export * from './organization-member.js';
 
 export * from './application-context.js';
 export * from './pagination.js';
+export * from './sales.js';
+export * from './sales-v2.js';
+
+// Staged LOCK contracts only. Do not change the existing M3/M4 exports until
+// their producers, actions and services are migrated in the coordinated cutover.
+export const createInventoryMovementV2Schema = createInventoryMovementSchema
+    .extend({ expectedInventoryUnit: z.enum(INVENTORY_UNITS) })
+    .strict();
+export const postFeedUsageV2Schema = postFeedUsageSchema
+    .extend({ expectedInventoryUnit: z.enum(INVENTORY_UNITS) })
+    .strict();
+export type CreateInventoryMovementV2Input = z.infer<typeof createInventoryMovementV2Schema>;
+export type PostFeedUsageV2Input = z.infer<typeof postFeedUsageV2Schema>;
