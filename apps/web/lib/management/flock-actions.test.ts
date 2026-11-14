@@ -208,6 +208,7 @@ it('posts a precise positive feed quantity once and lets the API own the invento
         form({
             ...posting,
             inventoryItemId: feedItem,
+            expectedInventoryUnit: 'KG',
             quantity: '999999999999999.999',
             inventoryMovementId: randomUUID(),
             reason: 'ADJUSTMENT',
@@ -221,6 +222,7 @@ it('posts a precise positive feed quantity once and lets the API own the invento
             occurredAt: posting.occurredAt,
             note: 'Morning check',
             inventoryItemId: feedItem,
+            expectedInventoryUnit: 'KG',
             quantity: '999999999999999.999',
         }),
     });
@@ -230,7 +232,12 @@ it('posts a precise positive feed quantity once and lets the API own the invento
         (
             await postFeedUsageAction(
                 {},
-                form({ ...posting, inventoryItemId: feedItem, quantity: '5' }),
+                form({
+                    ...posting,
+                    inventoryItemId: feedItem,
+                    expectedInventoryUnit: 'KG',
+                    quantity: '5',
+                }),
             )
         ).error,
     ).toMatch(/not enough feed stock at this farm/);
@@ -256,7 +263,12 @@ it('rejects posting contract bypasses and malformed flock IDs before calling API
             (
                 await postFeedUsageAction(
                     {},
-                    form({ ...posting, inventoryItemId: feedItem, quantity }),
+                    form({
+                        ...posting,
+                        inventoryItemId: feedItem,
+                        expectedInventoryUnit: 'KG',
+                        quantity,
+                    }),
                 )
             ).fields?.quantity,
         ).toBeDefined();
@@ -267,6 +279,7 @@ it('rejects posting contract bypasses and malformed flock IDs before calling API
                 form({
                     ...posting,
                     inventoryItemId: feedItem,
+                    expectedInventoryUnit: 'KG',
                     quantity: '1',
                     flockId: '../foreign',
                 }),
@@ -293,7 +306,12 @@ it('rechecks the exact posting permission and selected farm, independently of ma
         (
             await postFeedUsageAction(
                 {},
-                form({ ...posting, inventoryItemId: feedItem, quantity: '1' }),
+                form({
+                    ...posting,
+                    inventoryItemId: feedItem,
+                    expectedInventoryUnit: 'KG',
+                    quantity: '1',
+                }),
             )
         ).error,
     ).toBeDefined();

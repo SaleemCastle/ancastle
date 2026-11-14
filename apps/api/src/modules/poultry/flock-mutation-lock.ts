@@ -1,4 +1,5 @@
-import { Prisma } from '../../generated/prisma/client.js';
+import type { Prisma } from '../../generated/prisma/client.js';
+import { lockMutation } from '../../database/mutation-locks.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
 
 /** All flock mutations acquire the advisory lock before the row lock, then
@@ -10,11 +11,5 @@ export async function lockFlockMutation(
   farmId: string,
   flockId: string,
 ) {
-  await tx.$executeRaw(Prisma.sql`
-    SELECT pg_advisory_xact_lock(hashtext(${context.organizationId}), hashtext(${`flock:${farmId}:${flockId}`}))
-  `);
-  await tx.$queryRaw(Prisma.sql`
-    SELECT "id" FROM "flocks" WHERE "organizationId" = ${context.organizationId}::uuid
-      AND "farmId" = ${farmId}::uuid AND "id" = ${flockId}::uuid FOR UPDATE
-  `);
+  await lockMutation(tx, context, { flocks: [{ farmId, flockId }] });
 }

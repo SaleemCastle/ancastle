@@ -70,6 +70,7 @@ function movementForm(values: Record<string, string> = {}) {
         organization,
         farm,
         inventoryItemId: inventoryItem,
+        expectedInventoryUnit: 'KG',
         quantity: '-7.375',
         reason: 'ISSUE',
         occurredAt: '2026-10-30T09:30',
@@ -232,6 +233,7 @@ describe('Inventory item management actions', () => {
                 method: 'POST',
                 body: JSON.stringify({
                     inventoryItemId: inventoryItem,
+                    expectedInventoryUnit: 'KG',
                     quantity: -7.375,
                     reason: 'ISSUE',
                     occurredAt: new Date('2026-10-30T09:30').toISOString(),
@@ -257,5 +259,20 @@ describe('Inventory item management actions', () => {
 
         expect(fake.api).not.toHaveBeenCalled();
         expect(fake.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing displayed unit and surfaces definition conflicts without retrying', async () => {
+        const input = movementForm();
+        input.delete('expectedInventoryUnit');
+        expect(
+            (await postInventoryMovementAction({}, input)).fields?.expectedInventoryUnit,
+        ).toBeDefined();
+        expect(fake.api).not.toHaveBeenCalled();
+        const { ManagementApiError } = await import('./api');
+        fake.api.mockRejectedValueOnce(new ManagementApiError('INVENTORY_DEFINITION_CHANGED'));
+        expect((await postInventoryMovementAction({}, movementForm())).error).toMatch(
+            /Reload and review/,
+        );
+        expect(fake.api).toHaveBeenCalledTimes(1);
     });
 });

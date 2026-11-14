@@ -26,6 +26,7 @@ describe('Feed usage and inventory (PostgreSQL)', () => {
   const input = (value = '1.125') => ({
     flockId: flockA,
     inventoryItemId: feedA,
+    expectedInventoryUnit: 'KG' as const,
     quantity: quantity(value),
     occurredAt,
   });
@@ -118,6 +119,7 @@ describe('Feed usage and inventory (PostgreSQL)', () => {
       })),
     });
     await stock.postMovement(context, {
+      expectedInventoryUnit: 'KG',
       farmId: farmA,
       inventoryItemId: feedA,
       quantity: quantity('10'),
@@ -253,6 +255,7 @@ describe('Feed usage and inventory (PostgreSQL)', () => {
 
   it('enforces direct persistence scope, matching movement semantics and organization-safe actor attribution', async () => {
     const movement = await stock.postMovement(context, {
+      expectedInventoryUnit: 'KG',
       farmId: farmA,
       inventoryItemId: feedA,
       quantity: quantity('-1'),

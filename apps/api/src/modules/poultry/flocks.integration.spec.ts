@@ -76,6 +76,7 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
       .post(`${path()}/${flock}/feed-usage`)
       .set('Authorization', auth(role))
       .send({
+        expectedInventoryUnit: 'KG',
         inventoryItemId: item,
         quantity,
         occurredAt,
@@ -205,6 +206,7 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
       })),
     });
     await stock.postMovement(context, {
+      expectedInventoryUnit: 'KG',
       farmId: farm,
       inventoryItemId: item,
       quantity: new Prisma.Decimal('10'),
@@ -600,7 +602,12 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
         await api()
           .post(`${path(selectedFarm)}/${otherFlock}/feed-usage`)
           .set('Authorization', auth(role))
-          .send({ inventoryItemId: item, quantity: 1, occurredAt })
+          .send({
+            expectedInventoryUnit: 'KG',
+            inventoryItemId: item,
+            quantity: 1,
+            occurredAt,
+          })
           .expect(403);
       }
     }
@@ -655,7 +662,12 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
           await api()
             .post(`${path()}/${id}/feed-usage`)
             .set('Authorization', auth())
-            .send({ inventoryItemId: item, quantity: 1, occurredAt })
+            .send({
+              expectedInventoryUnit: 'KG',
+              inventoryItemId: item,
+              quantity: 1,
+              occurredAt,
+            })
             .expect(404)
         ).body.error.code,
       ).toBe('FEED_USAGE_SCOPE_NOT_FOUND');
@@ -665,7 +677,12 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
         await api()
           .post(`${path()}/${flock}/feed-usage`)
           .set('Authorization', auth())
-          .send({ inventoryItemId: foreignItem, quantity: 1, occurredAt })
+          .send({
+            expectedInventoryUnit: 'KG',
+            inventoryItemId: foreignItem,
+            quantity: 1,
+            occurredAt,
+          })
           .expect(404)
       ).body.error.code,
     ).toBe('FEED_USAGE_SCOPE_NOT_FOUND');
@@ -723,6 +740,7 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
         .post(`${path()}/${flock}/feed-usage`)
         .set('Authorization', auth())
         .send({
+          expectedInventoryUnit: 'KG',
           inventoryItemId: item,
           quantity: '1',
           occurredAt,
@@ -742,7 +760,12 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
       await api()
         .post(`${path()}/${flock}/feed-usage`)
         .set('Authorization', auth())
-        .send({ inventoryItemId: item, quantity, occurredAt })
+        .send({
+          expectedInventoryUnit: 'KG',
+          inventoryItemId: item,
+          quantity,
+          occurredAt,
+        })
         .expect(400);
     }
     await api()
@@ -828,6 +851,7 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
       },
     });
     await stock.postMovement(context, {
+      expectedInventoryUnit: 'KG',
       farmId: otherFarm,
       inventoryItemId: item,
       quantity: new Prisma.Decimal('7'),
@@ -848,7 +872,12 @@ describe('Flock operations API (HTTP + PostgreSQL)', () => {
       const usage = await api()
         .post(`${base}/feed-usage`)
         .set('Authorization', auth('staff'))
-        .send({ inventoryItemId: item, quantity, occurredAt })
+        .send({
+          expectedInventoryUnit: 'KG',
+          inventoryItemId: item,
+          quantity,
+          occurredAt,
+        })
         .expect(201);
       for (const [suffix, original] of [
         ['mortality', event.body.data],

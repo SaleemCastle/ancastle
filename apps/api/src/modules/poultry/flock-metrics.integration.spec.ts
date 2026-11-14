@@ -104,6 +104,7 @@ describe('Derived flock metrics and mortality posting (PostgreSQL)', () => {
       },
     });
     await stock.postMovement(context, {
+      expectedInventoryUnit: 'KG',
       farmId: farmA,
       inventoryItemId: item,
       quantity: new Prisma.Decimal('10'),
@@ -123,6 +124,7 @@ describe('Derived flock metrics and mortality posting (PostgreSQL)', () => {
     await post(3);
     await post(2);
     const cancelledFeed = await feed.post(context, farmA, {
+      expectedInventoryUnit: 'KG',
       flockId: flockA,
       inventoryItemId: item,
       quantity: new Prisma.Decimal('1.125'),
@@ -130,6 +132,7 @@ describe('Derived flock metrics and mortality posting (PostgreSQL)', () => {
     });
     await feed.reverse(context, farmA, cancelledFeed.id, { occurredAt });
     await feed.post(context, farmA, {
+      expectedInventoryUnit: 'KG',
       flockId: flockA,
       inventoryItemId: item,
       quantity: new Prisma.Decimal('2.375'),
@@ -146,6 +149,7 @@ describe('Derived flock metrics and mortality posting (PostgreSQL)', () => {
       },
     });
     await stock.postMovement(context, {
+      expectedInventoryUnit: 'EACH',
       farmId: farmA,
       inventoryItemId: other.id,
       quantity: new Prisma.Decimal('10'),
@@ -153,6 +157,7 @@ describe('Derived flock metrics and mortality posting (PostgreSQL)', () => {
       occurredAt,
     });
     await feed.post(context, farmA, {
+      expectedInventoryUnit: 'EACH',
       flockId: flockA,
       inventoryItemId: other.id,
       quantity: new Prisma.Decimal('3'),

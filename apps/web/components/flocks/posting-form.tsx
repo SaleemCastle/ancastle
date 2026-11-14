@@ -40,7 +40,20 @@ export function FlockPostingForm({
         value: values[name] ?? '',
         onChange: (
             event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
-        ) => setValues((current) => ({ ...current, [name]: event.target.value })),
+        ) => {
+            const value = event.target.value;
+            setValues((current) => ({
+                ...current,
+                [name]: value,
+                // Keep the unit attached to the selection when refreshed props arrive.
+                ...(name === 'inventoryItemId'
+                    ? {
+                          expectedInventoryUnit:
+                              choices.find((item) => item.id === value)?.unit ?? '',
+                      }
+                    : {}),
+            }));
+        },
         'aria-invalid': Boolean(state.fields?.[name]),
         'aria-describedby': state.fields?.[name] ? `${kind}-${name}-error` : undefined,
     });
@@ -59,6 +72,13 @@ export function FlockPostingForm({
             <input type="hidden" name="organization" value={organization} />
             <input type="hidden" name="farm" value={farm} />
             <input type="hidden" name="flockId" value={flockId} />
+            {!mortality && (
+                <input
+                    type="hidden"
+                    name="expectedInventoryUnit"
+                    value={values.expectedInventoryUnit ?? ''}
+                />
+            )}
             <div>
                 <h2 className="text-lg font-semibold">{title}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -116,6 +136,7 @@ export function FlockPostingForm({
                                 ))}
                             </select>
                             {fieldError('inventoryItemId')}
+                            {fieldError('expectedInventoryUnit')}
                         </div>
                         <div className="space-y-2">
                             <label htmlFor="feed-quantity" className="block text-sm font-medium">

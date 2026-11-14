@@ -12,6 +12,7 @@ import type { ManagementActionState } from '@/lib/management/action-state';
 function movementInput(form: FormData) {
     return {
         inventoryItemId: formValue(form, 'inventoryItemId'),
+        expectedInventoryUnit: formValue(form, 'expectedInventoryUnit'),
         quantity: formValue(form, 'quantity'),
         reason: formValue(form, 'reason'),
         occurredAt: formValue(form, 'occurredAt'),
