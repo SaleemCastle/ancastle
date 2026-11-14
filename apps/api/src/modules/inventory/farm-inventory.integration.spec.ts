@@ -303,6 +303,7 @@ describe('Farm inventory API (HTTP + PostgreSQL)', () => {
       .post(`${path()}/movements`)
       .set('Authorization', auth())
       .send({
+        expectedInventoryUnit: 'KG',
         inventoryItemId: items.feed,
         quantity: 50.125,
         reason: 'RECEIPT',
@@ -325,6 +326,7 @@ describe('Farm inventory API (HTTP + PostgreSQL)', () => {
       .post(`${path()}/movements`)
       .set('Authorization', auth())
       .send({
+        expectedInventoryUnit: 'KG',
         inventoryItemId: items.feed,
         quantity: -7.375,
         reason: 'ISSUE',
@@ -392,6 +394,7 @@ describe('Farm inventory API (HTTP + PostgreSQL)', () => {
       .post(`${path()}/movements`)
       .set('Authorization', auth())
       .send({
+        expectedInventoryUnit: 'KG',
         inventoryItemId: items.feed,
         quantity: -1.125,
         reason: 'ISSUE',
@@ -452,6 +455,7 @@ describe('Farm inventory API (HTTP + PostgreSQL)', () => {
       .post(`${path()}/movements`)
       .set('Authorization', auth())
       .send({
+        expectedInventoryUnit: 'KG',
         inventoryItemId: items.foreign,
         quantity: 10.125,
         reason: 'RECEIPT',

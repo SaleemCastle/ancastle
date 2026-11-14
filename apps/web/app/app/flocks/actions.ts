@@ -82,6 +82,7 @@ export async function postFeedUsageAction(
             const input = validateForm(postFeedUsageSchema, {
                 ...postingInput(form),
                 inventoryItemId: formValue(form, 'inventoryItemId'),
+                expectedInventoryUnit: formValue(form, 'expectedInventoryUnit'),
                 quantity: formValue(form, 'quantity'),
             });
             try {

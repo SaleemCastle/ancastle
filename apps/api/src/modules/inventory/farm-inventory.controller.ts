@@ -73,6 +73,7 @@ export class FarmInventoryController {
     const movement = await this.stock.postMovement(context, {
       farmId: farm.farmId,
       inventoryItemId: input.inventoryItemId,
+      expectedInventoryUnit: input.expectedInventoryUnit,
       quantity: new Prisma.Decimal(input.quantity),
       reason: input.reason,
       occurredAt: input.occurredAt,

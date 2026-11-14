@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import type { InventoryUnit } from '@ancastle/types';
 
 import { BusinessException } from '../../common/exceptions/business.exception.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { lockMutation } from '../../database/mutation-locks.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { FarmAccessService } from '../authorization/farm-access.service.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
@@ -12,6 +14,7 @@ import { InventoryStockService } from '../inventory/inventory-stock.service.js';
 export interface PostFeedUsageInput {
   flockId: string;
   inventoryItemId: string;
+  expectedInventoryUnit: InventoryUnit;
   quantity: Prisma.Decimal;
   occurredAt: Date;
   note?: string;
@@ -34,6 +37,11 @@ export class FeedUsageService {
     this.validateQuantity(input.quantity);
     return this.prisma.$transaction(
       async (tx) => {
+        await lockMutation(tx, context, {
+          definitions: { inventory_items: [{ id: input.inventoryItemId }] },
+          flocks: [{ farmId, flockId: input.flockId }],
+          stock: [{ farmId, inventoryItemId: input.inventoryItemId }],
+        });
         await this.verifyFarm(tx, context, farmId);
         const flock = await tx.flock.findFirst({
           where: {
@@ -61,6 +69,7 @@ export class FeedUsageService {
           {
             farmId,
             inventoryItemId: input.inventoryItemId,
+            expectedInventoryUnit: input.expectedInventoryUnit,
             quantity: input.quantity.negated(),
             reason: 'ISSUE',
             occurredAt: input.occurredAt,
@@ -110,6 +119,37 @@ export class FeedUsageService {
             },
           });
           if (!original) throw this.scopeNotFound();
+          await lockMutation(tx, context, {
+            definitions: {
+              inventory_items: [{ id: original.inventoryItemId }],
+            },
+            flocks: [{ farmId, flockId: original.flockId }],
+            stock: [{ farmId, inventoryItemId: original.inventoryItemId }],
+          });
+          await this.verifyFarm(tx, context, farmId);
+          if (
+            await tx.feedUsage.findFirst({
+              where: {
+                organizationId: context.organizationId,
+                farmId,
+                reversesUsageId: original.id,
+              },
+              select: { id: true },
+            })
+          ) {
+            throw new BusinessException(
+              'FEED_USAGE_ALREADY_REVERSED',
+              'Feed usage has already been reversed',
+            );
+          }
+          const item = await tx.inventoryItem.findFirst({
+            where: {
+              organizationId: context.organizationId,
+              id: original.inventoryItemId,
+            },
+            select: { unit: true },
+          });
+          if (!item) throw this.scopeNotFound();
           // The M3 lock serializes both feed consumption and compensation for this
           // stock position. The unique reversal key is the final duplicate guard.
           const movement = await this.stock.postMovementInTransaction(
@@ -118,6 +158,7 @@ export class FeedUsageService {
             {
               farmId,
               inventoryItemId: original.inventoryItemId,
+              expectedInventoryUnit: item.unit,
               quantity: original.quantity,
               reason: 'ADJUSTMENT',
               occurredAt: input.occurredAt,

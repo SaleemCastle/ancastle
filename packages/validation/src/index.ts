@@ -281,6 +281,7 @@ export const postFeedUsageSchema = z
     .object({
         ...poultryPostingFields,
         inventoryItemId: z.uuid(),
+        expectedInventoryUnit: z.enum(INVENTORY_UNITS),
         // Decimal strings retain the full PostgreSQL precision; ordinary JSON
         // numbers are accepted when their canonical value fits the same scale.
         quantity: z
@@ -308,6 +309,7 @@ export const inventoryMovementQuantitySchema = z.coerce
 export const createInventoryMovementSchema = z
     .object({
         inventoryItemId: z.uuid(),
+        expectedInventoryUnit: z.enum(INVENTORY_UNITS),
         quantity: inventoryMovementQuantitySchema,
         reason: z.enum(INVENTORY_MOVEMENT_REASONS),
         occurredAt: z.coerce.date(),
@@ -352,13 +354,8 @@ export * from './pagination.js';
 export * from './sales.js';
 export * from './sales-v2.js';
 
-// Staged LOCK contracts only. Do not change the existing M3/M4 exports until
-// their producers, actions and services are migrated in the coordinated cutover.
-export const createInventoryMovementV2Schema = createInventoryMovementSchema
-    .extend({ expectedInventoryUnit: z.enum(INVENTORY_UNITS) })
-    .strict();
-export const postFeedUsageV2Schema = postFeedUsageSchema
-    .extend({ expectedInventoryUnit: z.enum(INVENTORY_UNITS) })
-    .strict();
+// LOCK cutover: preserve staged import names as aliases to the now-active contract.
+export const createInventoryMovementV2Schema = createInventoryMovementSchema;
+export const postFeedUsageV2Schema = postFeedUsageSchema;
 export type CreateInventoryMovementV2Input = z.infer<typeof createInventoryMovementV2Schema>;
 export type PostFeedUsageV2Input = z.infer<typeof postFeedUsageV2Schema>;

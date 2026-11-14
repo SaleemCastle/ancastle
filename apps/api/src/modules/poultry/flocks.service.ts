@@ -16,6 +16,7 @@ import {
 import { BusinessException } from '../../common/exceptions/business.exception.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { lockMutation } from '../../database/mutation-locks.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { FarmAccessService } from '../authorization/farm-access.service.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
@@ -156,9 +157,20 @@ export class FlocksService {
     await this.farms.resolve(context, farmId);
     return this.prisma.$transaction(async (tx) => {
       // Codes are organization-wide, matching the persisted uniqueness boundary.
-      await tx.$queryRaw(
-        Prisma.sql`SELECT "id" FROM "organizations" WHERE "id" = ${context.organizationId}::uuid FOR UPDATE`,
-      );
+      await lockMutation(tx, context, {
+        parent: 'UPDATE',
+        definitions: { farms: [{ id: farmId }] },
+      });
+      const farm = await tx.farm.findFirst({
+        where: { AND: [this.farms.farmWhere(context), { id: farmId }] },
+        select: { id: true },
+      });
+      if (!farm)
+        throw new BusinessException(
+          'FORBIDDEN',
+          'You do not have permission to perform this action',
+          403,
+        );
       const latest = await tx.flock.findFirst({
         where: {
           organizationId: context.organizationId,

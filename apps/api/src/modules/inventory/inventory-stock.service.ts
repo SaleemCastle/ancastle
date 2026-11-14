@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import type { InventoryUnit } from '@ancastle/types';
 
 import { BusinessException } from '../../common/exceptions/business.exception.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { lockMutation } from '../../database/mutation-locks.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
 
@@ -13,6 +15,7 @@ export interface FarmStockItem {
 export interface PostInventoryMovementInput {
   farmId: string;
   inventoryItemId: string;
+  expectedInventoryUnit: InventoryUnit;
   quantity: Prisma.Decimal;
   reason: 'RECEIPT' | 'ISSUE' | 'ADJUSTMENT';
   occurredAt: Date;
@@ -100,8 +103,9 @@ export class InventoryStockService {
     context: OrganizationContext,
     input: PostInventoryMovementInput,
   ) {
-    return this.prisma.$transaction((tx) =>
-      this.postMovementInTransaction(tx, context, input),
+    return this.prisma.$transaction(
+      (tx) => this.postMovementInTransaction(tx, context, input),
+      { isolationLevel: 'ReadCommitted' },
     );
   }
 
@@ -121,6 +125,10 @@ export class InventoryStockService {
       );
     }
 
+    await lockMutation(tx, context, {
+      definitions: { inventory_items: [{ id: input.inventoryItemId }] },
+      stock: [{ farmId: input.farmId, inventoryItemId: input.inventoryItemId }],
+    });
     await this.verifyOwnership(
       tx,
       context.organizationId,
@@ -128,18 +136,20 @@ export class InventoryStockService {
       input.inventoryItemId,
     );
 
-    // Serialize movement posting for this farm/item combination.
-    //
-    // PostgreSQL advisory transaction locks avoid maintaining a separate
-    // mutable balance row purely for locking purposes.
-    await tx.$executeRaw(
-      Prisma.sql`
-          SELECT pg_advisory_xact_lock(
-            hashtext(${context.organizationId}),
-            hashtext(${`${input.farmId}:${input.inventoryItemId}`})
-          )
-        `,
-    );
+    const item = await tx.inventoryItem.findFirstOrThrow({
+      where: {
+        organizationId: context.organizationId,
+        id: input.inventoryItemId,
+      },
+      select: { unit: true },
+    });
+    if (item.unit !== input.expectedInventoryUnit) {
+      throw new BusinessException(
+        'INVENTORY_DEFINITION_CHANGED',
+        'Inventory unit changed; reload and review before posting',
+        409,
+      );
+    }
 
     const balance = await tx.inventoryMovement.aggregate({
       where: {

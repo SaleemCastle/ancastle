@@ -161,6 +161,7 @@ test('posts mortality and feed with authoritative refresh, safe reset and farm-s
         });
         await api(`farms/${farm.id}/inventory/movements`, {
             inventoryItemId: item.id,
+            expectedInventoryUnit: item.unit,
             quantity: 10,
             reason: 'RECEIPT',
             occurredAt: '2026-11-03T08:00:00.000Z',
@@ -246,6 +247,81 @@ test('posts mortality and feed with authoritative refresh, safe reset and farm-s
         ).toBeVisible();
     } finally {
         // The launcher disposes this entire temporary database, preserving ledger protections.
+        await closeWebAuthDatabase();
+    }
+});
+
+test('keeps the selected inventory unit across a soft refresh and rejects the stale entry', async ({
+    page,
+    request,
+}) => {
+    test.setTimeout(60000);
+    const account = await createWebAuthFixture();
+    try {
+        const farm = await account.addFarm('Unit refresh farm', 'UNIT');
+        const login = await request.post('http://127.0.0.1:4310/api/auth/login', {
+            data: { email: account.email, password: account.password },
+        });
+        expect(login.ok()).toBe(true);
+        const headers = { Authorization: 'Bearer ' + (await login.json()).accessToken };
+        const base = `http://127.0.0.1:4310/api/organizations/${account.organizationId}`;
+        const post = async (path: string, data: object) => {
+            const response = await request.post(`${base}/${path}`, { headers, data });
+            expect(response.ok()).toBe(true);
+            return (await response.json()).data;
+        };
+        const target = await post('inventory-items', {
+            name: 'Unused item',
+            category: 'OTHER',
+            unit: 'KG',
+        });
+        const history = await post('inventory-items', {
+            name: 'History item',
+            category: 'OTHER',
+            unit: 'KG',
+        });
+        for (let i = 0; i < 2; i++)
+            await post(`farms/${farm.id}/inventory/movements`, {
+                inventoryItemId: history.id,
+                expectedInventoryUnit: 'KG',
+                quantity: 1,
+                reason: 'RECEIPT',
+                occurredAt: '2026-11-03T08:00:00.000Z',
+            });
+        await page.goto('/login');
+        await page.getByLabel('Email', { exact: true }).fill(account.email);
+        await page.getByLabel('Password', { exact: true }).fill(account.password);
+        await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+        await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+        await page.goto(
+            `/app/inventory/stock?organization=${account.organizationId}&farm=${farm.id}&pageSize=1`,
+        );
+        const form = page.getByRole('form', { name: 'Post inventory movement', exact: true });
+        await form.getByLabel('Inventory item', { exact: true }).selectOption(target.id);
+        await form.getByLabel('Reason', { exact: true }).selectOption('RECEIPT');
+        await form.getByLabel('Quantity', { exact: true }).fill('5');
+        await form.getByLabel('Occurred at', { exact: true }).fill('2026-11-03T09:00');
+        const changed = await request.patch(`${base}/inventory-items/${target.id}`, {
+            headers,
+            data: { unit: 'EACH' },
+        });
+        expect(changed.ok()).toBe(true);
+        await page.getByRole('link', { name: 'Next', exact: true }).click();
+        await expect(form.getByRole('option', { name: /Unused item.*EACH/ })).toHaveCount(1);
+        await expect(form.getByLabel('Quantity', { exact: true })).toHaveValue('5');
+        await expect(form.locator('input[name="expectedInventoryUnit"]')).toHaveValue('KG');
+        await form.getByRole('button', { name: 'Post movement', exact: true }).click();
+        await expect(form.getByRole('alert')).toContainText(
+            'The inventory unit changed. Your entry was not posted.',
+        );
+        await expect(form.getByLabel('Quantity', { exact: true })).toHaveValue('5');
+        const movements = await request.get(
+            `${base}/farms/${farm.id}/inventory/movements?inventoryItemId=${target.id}`,
+            { headers },
+        );
+        expect(movements.ok()).toBe(true);
+        expect((await movements.json()).meta.totalItems).toBe(0);
+    } finally {
         await closeWebAuthDatabase();
     }
 });

@@ -32,6 +32,10 @@ const messages: Record<string, string> = {
     INVENTORY_ITEM_CODE_EXISTS: 'An inventory item with this code already exists.',
     INVENTORY_ITEM_CODE_LIMIT_REACHED: 'No additional inventory item codes are available.',
     INVENTORY_SCOPE_NOT_FOUND: 'This inventory resource is unavailable.',
+    INVENTORY_DEFINITION_CHANGED:
+        'The inventory unit changed. Your entry was not posted. Reload and review the item and quantity before trying again.',
+    INVENTORY_DEFINITION_FROZEN:
+        'History or catalog references protect this unit or category. Create a new inventory item for a different definition.',
     INSUFFICIENT_INVENTORY_STOCK: 'This movement would reduce stock below zero.',
     FLOCK_NOT_FOUND: 'This flock is unavailable in the selected farm.',
     FLOCK_OVER_MORTALITY: 'Starting population cannot be less than recorded mortality.',

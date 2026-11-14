@@ -154,6 +154,7 @@ describe('Inventory stock service (PostgreSQL)', () => {
 
   it('rejects a movement that would produce negative stock', async () => {
     await service.postMovement(context, {
+      expectedInventoryUnit: 'KG',
       farmId,
       inventoryItemId,
       quantity: new Prisma.Decimal('5.000'),
@@ -163,6 +164,7 @@ describe('Inventory stock service (PostgreSQL)', () => {
 
     await expect(
       service.postMovement(context, {
+        expectedInventoryUnit: 'KG',
         farmId,
         inventoryItemId,
         quantity: new Prisma.Decimal('-6.000'),
@@ -184,6 +186,7 @@ describe('Inventory stock service (PostgreSQL)', () => {
 
   it('serializes concurrent outbound movements for the same stock position', async () => {
     await service.postMovement(context, {
+      expectedInventoryUnit: 'KG',
       farmId,
       inventoryItemId,
       quantity: new Prisma.Decimal('10.000'),
@@ -193,6 +196,7 @@ describe('Inventory stock service (PostgreSQL)', () => {
 
     const results = await Promise.allSettled([
       service.postMovement(context, {
+        expectedInventoryUnit: 'KG',
         farmId,
         inventoryItemId,
         quantity: new Prisma.Decimal('-8.000'),
@@ -200,6 +204,7 @@ describe('Inventory stock service (PostgreSQL)', () => {
         occurredAt: new Date(),
       }),
       service.postMovement(context, {
+        expectedInventoryUnit: 'KG',
         farmId,
         inventoryItemId,
         quantity: new Prisma.Decimal('-8.000'),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState, useState, type ChangeEvent } from 'react';
 import { INVENTORY_MOVEMENT_REASONS, type InventoryItem } from '@ancastle/types';
 
 import { postInventoryMovementAction } from '@/app/app/inventory/stock/actions';
@@ -54,22 +54,34 @@ export function InventoryMovementForm({
     farm: string;
     items: InventoryItem[];
 }) {
+    const [values, setValues] = useState<Record<string, string>>({});
     const [state, action, pending] = useActionState<ManagementActionState, FormData>(
-        postInventoryMovementAction,
+        async (previous, form) => {
+            const result = await postInventoryMovementAction(previous, form);
+            if (result.success) setValues({});
+            return result;
+        },
         {},
     );
-
-    const formRef = useRef<HTMLFormElement>(null);
-
-    useEffect(() => {
-        if (state.success) {
-            formRef.current?.reset();
-        }
-    }, [state.success]);
+    const control = (name: string) => ({
+        value: values[name] ?? '',
+        onChange: (
+            event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+        ) => {
+            const value = event.target.value;
+            setValues((current) => ({
+                ...current,
+                [name]: value,
+                // Keep the unit attached to the selection when refreshed props arrive.
+                ...(name === 'inventoryItemId'
+                    ? { expectedInventoryUnit: items.find((item) => item.id === value)?.unit ?? '' }
+                    : {}),
+            }));
+        },
+    });
 
     return (
         <form
-            ref={formRef}
             action={action}
             aria-label="Post inventory movement"
             className="space-y-5 rounded-xl border bg-card p-5"
@@ -77,6 +89,11 @@ export function InventoryMovementForm({
             <input type="hidden" name="organization" value={organization} />
 
             <input type="hidden" name="farm" value={farm} />
+            <input
+                type="hidden"
+                name="expectedInventoryUnit"
+                value={values.expectedInventoryUnit ?? ''}
+            />
 
             <div>
                 <h2 className="text-lg font-semibold">Post movement</h2>
@@ -96,7 +113,7 @@ export function InventoryMovementForm({
                     id="movement-item"
                     name="inventoryItemId"
                     required
-                    defaultValue=""
+                    {...control('inventoryItemId')}
                     className={inputClass}
                     aria-invalid={Boolean(state.fields?.inventoryItemId)}
                 >
@@ -114,6 +131,7 @@ export function InventoryMovementForm({
                 </select>
 
                 <FieldError state={state} field="inventoryItemId" id="movement-item-error" />
+                <FieldError state={state} field="expectedInventoryUnit" id="movement-unit-error" />
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
@@ -126,7 +144,7 @@ export function InventoryMovementForm({
                         id="movement-reason"
                         name="reason"
                         required
-                        defaultValue=""
+                        {...control('reason')}
                         className={inputClass}
                     >
                         <option value="" disabled>
@@ -151,6 +169,7 @@ export function InventoryMovementForm({
                     <input
                         id="movement-quantity"
                         name="quantity"
+                        {...control('quantity')}
                         type="number"
                         required
                         step="0.001"
@@ -175,6 +194,7 @@ export function InventoryMovementForm({
                 <input
                     id="movement-occurred-at"
                     name="occurredAt"
+                    {...control('occurredAt')}
                     type="datetime-local"
                     required
                     className={inputClass}
@@ -192,6 +212,7 @@ export function InventoryMovementForm({
                     <input
                         id="movement-reference"
                         name="reference"
+                        {...control('reference')}
                         maxLength={120}
                         className={inputClass}
                         placeholder="Optional reference"
@@ -208,6 +229,7 @@ export function InventoryMovementForm({
                     <textarea
                         id="movement-note"
                         name="note"
+                        {...control('note')}
                         maxLength={2000}
                         className={textareaClass}
                         placeholder="Optional note"

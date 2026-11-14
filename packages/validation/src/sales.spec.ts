@@ -541,11 +541,11 @@ describe('M5 shared sales contracts', () => {
         expect(salesProductQuerySchema.safeParse({ kind: 'LIVESTOCK' }).success).toBe(false);
     });
 
-    it('stages LOCK/POP contracts without switching existing M3/M4 inputs or defaulting missing depletion', () => {
+    it('activates LOCK unit preconditions while POP population contracts remain staged', () => {
         const feed = { inventoryItemId: itemId, quantity: '1.125', occurredAt: at };
         const movement = { ...feed, quantity: 1, reason: 'RECEIPT' };
-        expect(postFeedUsageSchema.safeParse(feed).success).toBe(true);
-        expect(createInventoryMovementSchema.safeParse(movement).success).toBe(true);
+        expect(postFeedUsageSchema.safeParse(feed).success).toBe(false);
+        expect(createInventoryMovementSchema.safeParse(movement).success).toBe(false);
         expect(postFeedUsageV2Schema.safeParse(feed).success).toBe(false);
         expect(createInventoryMovementV2Schema.safeParse(movement).success).toBe(false);
         expect(

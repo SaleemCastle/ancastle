@@ -8,6 +8,7 @@ import type {
 
 import { BusinessException } from '../../common/exceptions/business.exception.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { lockMutation } from '../../database/mutation-locks.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
 
@@ -123,14 +124,7 @@ export class InventoryItemsService {
       return await this.prisma.$transaction(async (tx) => {
         // Inventory item codes are sequential within an organization.
         // Lock the organization so concurrent creates allocate codes safely.
-        await tx.$queryRaw(
-          Prisma.sql`
-            SELECT "id"
-            FROM "organizations"
-            WHERE "id" = ${context.organizationId}::uuid
-            FOR UPDATE
-          `,
-        );
+        await lockMutation(tx, context, { parent: 'UPDATE' });
 
         const latest = await tx.inventoryItem.findFirst({
           where: {
@@ -175,26 +169,87 @@ export class InventoryItemsService {
     input: UpdateInventoryItemInput,
   ): Promise<InventoryItem> {
     try {
-      const [record] = await this.prisma.inventoryItem.updateManyAndReturn({
-        where: {
-          id,
-          organizationId: context.organizationId,
-        },
-        data: {
-          name: input.name,
-          description: input.description,
-          unit: input.unit,
-          category: input.category,
-          lowStockThreshold: input.lowStockThreshold,
-        },
-        select: inventoryItemSelect,
-      });
+      return await this.prisma.$transaction(
+        async (tx) => {
+          await lockMutation(tx, context, {
+            definitions: { inventory_items: [{ id, mode: 'UPDATE' }] },
+          });
+          const current = await tx.inventoryItem.findFirst({
+            where: { id, organizationId: context.organizationId },
+          });
+          if (!current) throw this.notFound();
+          const changingUnit =
+            input.unit !== undefined && input.unit !== current.unit;
+          const changingCategory =
+            input.category !== undefined && input.category !== current.category;
+          if (changingUnit || changingCategory) {
+            // Re-read all dependencies only after the exclusive definition lock.
+            const [movement, feed, catalog, confirmedLine] = await Promise.all([
+              tx.inventoryMovement.findFirst({
+                where: {
+                  organizationId: context.organizationId,
+                  inventoryItemId: id,
+                },
+                select: { id: true },
+              }),
+              tx.feedUsage.findFirst({
+                where: {
+                  organizationId: context.organizationId,
+                  inventoryItemId: id,
+                },
+                select: { id: true },
+              }),
+              tx.salesProduct.findFirst({
+                where: {
+                  organizationId: context.organizationId,
+                  inventoryItemId: id,
+                },
+                select: { id: true, kind: true },
+              }),
+              tx.orderLine.findFirst({
+                where: {
+                  organizationId: context.organizationId,
+                  inventoryItemId: id,
+                  order: { commercialState: { not: 'DRAFT' } },
+                },
+                select: { id: true },
+              }),
+            ]);
+            if (
+              (changingUnit &&
+                (movement || feed || catalog || confirmedLine)) ||
+              (changingCategory && (feed || catalog?.kind === 'PRODUCE'))
+            ) {
+              throw new BusinessException(
+                'INVENTORY_DEFINITION_FROZEN',
+                'Inventory unit or category is referenced by history or catalog; create a new item for a different definition',
+                409,
+              );
+            }
+          }
+          const [record] = await tx.inventoryItem.updateManyAndReturn({
+            where: {
+              id,
+              organizationId: context.organizationId,
+            },
+            data: {
+              name: input.name,
+              description: input.description,
+              unit: input.unit,
+              category: input.category,
+              lowStockThreshold: input.lowStockThreshold,
+            },
+            select: inventoryItemSelect,
+          });
 
-      if (!record) {
-        throw this.notFound();
-      }
+          if (!record) {
+            throw this.notFound();
+          }
 
-      return details(record);
+          return details(record);
+        },
+        { isolationLevel: 'ReadCommitted' },
+      );
     } catch (error) {
       this.rethrow(error);
     }
@@ -219,22 +274,30 @@ export class InventoryItemsService {
     id: string,
     isActive: boolean,
   ): Promise<InventoryItem> {
-    const [record] = await this.prisma.inventoryItem.updateManyAndReturn({
-      where: {
-        id,
-        organizationId: context.organizationId,
-      },
-      data: {
-        isActive,
-      },
-      select: inventoryItemSelect,
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await lockMutation(tx, context, {
+          definitions: { inventory_items: [{ id, mode: 'UPDATE' }] },
+        });
+        const [record] = await tx.inventoryItem.updateManyAndReturn({
+          where: {
+            id,
+            organizationId: context.organizationId,
+          },
+          data: {
+            isActive,
+          },
+          select: inventoryItemSelect,
+        });
 
-    if (!record) {
-      throw this.notFound();
-    }
+        if (!record) {
+          throw this.notFound();
+        }
 
-    return details(record);
+        return details(record);
+      },
+      { isolationLevel: 'ReadCommitted' },
+    );
   }
 
   private nextCode(previousCode?: string): string {
