@@ -16,7 +16,12 @@ try {
     url.pathname = '/' + name;
     const child = spawn(
         process.execPath,
-        ['node_modules/@playwright/test/cli.js', 'test', '--config=playwright.poultry.config.ts'],
+        [
+            'node_modules/@playwright/test/cli.js',
+            'test',
+            '--config=' + (process.argv[2] ?? 'playwright.poultry.config.ts'),
+            ...process.argv.slice(3),
+        ],
         {
             cwd: new URL('../', import.meta.url),
             stdio: 'inherit',

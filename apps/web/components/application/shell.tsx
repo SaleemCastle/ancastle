@@ -222,6 +222,23 @@ export function ApplicationShell({
                                 Poultry / Flocks
                             </Link>
                         )}
+                        {current?.permissions.includes('sales-product:read') && (
+                            <Link
+                                prefetch={false}
+                                aria-current={
+                                    activePath === '/app/sales-products' ? 'page' : undefined
+                                }
+                                href={applicationHref(
+                                    '/app/sales-products',
+                                    current.organization.id,
+                                    farm?.id,
+                                )}
+                                className={navigationClass('/app/sales-products')}
+                            >
+                                <PackageOpen className="size-4" aria-hidden="true" />
+                                Sales catalog
+                            </Link>
+                        )}
                         {current?.permissions.includes('customer:read') && (
                             <Link
                                 prefetch={false}

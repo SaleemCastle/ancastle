@@ -14,6 +14,16 @@ import {
 } from '@ancastle/types';
 
 const messages: Record<string, string> = {
+    SALES_PRODUCT_NOT_FOUND: 'This product is unavailable.',
+    SALES_PRODUCT_DEFINITION_FROZEN:
+        'Referenced product identity is protected. Create a new product for a different source.',
+    SALES_PRODUCT_KIND_MISMATCH: 'Poultry eligibility requires a poultry product.',
+    SALES_PRODUCE_SOURCE_INELIGIBLE:
+        'Select an active produce inventory item in this organization.',
+    SALES_PRODUCT_CODE_LIMIT_REACHED: 'No additional product codes are available.',
+    POULTRY_SOURCE_NOT_FOUND: 'This source eligibility is unavailable.',
+    POULTRY_SOURCE_INACTIVE: 'Use the existing source eligibility and reactivate it explicitly.',
+    POULTRY_SOURCE_INELIGIBLE: 'An active product and active flock are required.',
     ORGANIZATION_USER_NOT_FOUND: 'This resource is unavailable.',
     USER_CREATION_CONFLICT: 'User creation could not be completed.',
     INVALID_FARM_ACCESS: 'Selected farms are unavailable in this organization.',

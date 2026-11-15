@@ -99,3 +99,10 @@ describe('Inventory validation', () => {
         }).success,
     ).toBe(false);
 });
+
+it('supports a bounded inventory category filter for catalog selectors', () => {
+    expect(
+        inventoryQuerySchema.parse({ category: 'PRODUCE', isActive: 'true', pageSize: 20 }),
+    ).toMatchObject({ category: 'PRODUCE', isActive: true, pageSize: 20 });
+    expect(inventoryQuerySchema.safeParse({ category: 'BIRDS' }).success).toBe(false);
+});
