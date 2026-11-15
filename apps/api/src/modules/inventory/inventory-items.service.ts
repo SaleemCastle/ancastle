@@ -48,6 +48,7 @@ export class InventoryItemsService {
   ): Promise<InventoryItemListResponse> {
     const where: Prisma.InventoryItemWhereInput = {
       organizationId: context.organizationId,
+      category: input.category,
       ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
       ...(input.search
         ? {

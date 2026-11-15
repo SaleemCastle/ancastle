@@ -183,7 +183,9 @@ export const updateInventoryItemSchema = z
         message: 'At least one field must be provided',
     });
 
-export const inventoryQuerySchema = masterDataQuerySchema;
+export const inventoryQuerySchema = masterDataQuerySchema
+    .extend({ category: z.enum(INVENTORY_CATEGORIES).optional() })
+    .strict();
 
 // Dates stay as real YYYY-MM-DD calendar strings, matching Flock's PostgreSQL DATE
 // columns. Do not coerce timestamps/Date objects or apply timezone conversion.
