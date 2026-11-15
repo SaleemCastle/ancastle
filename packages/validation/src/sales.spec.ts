@@ -27,7 +27,7 @@ import {
     postFeedUsageV2Schema,
     flockMetricsV2Schema,
 } from './index.js';
-import type { Order, Fulfilment, FlockMetrics } from '@ancastle/types';
+import type { Order, Fulfilment } from '@ancastle/types';
 
 const ids = Array.from(
     { length: 12 },
@@ -541,7 +541,7 @@ describe('M5 shared sales contracts', () => {
         expect(salesProductQuerySchema.safeParse({ kind: 'LIVESTOCK' }).success).toBe(false);
     });
 
-    it('activates LOCK unit preconditions while POP population contracts remain staged', () => {
+    it('activates LOCK unit and POP population v2 contracts', () => {
         const feed = { inventoryItemId: itemId, quantity: '1.125', occurredAt: at };
         const movement = { ...feed, quantity: 1, reason: 'RECEIPT' };
         expect(postFeedUsageSchema.safeParse(feed).success).toBe(false);
@@ -555,7 +555,7 @@ describe('M5 shared sales contracts', () => {
             createInventoryMovementV2Schema.safeParse({ ...movement, expectedInventoryUnit: 'KG' })
                 .success,
         ).toBe(true);
-        const legacy: FlockMetrics = {
+        const legacy = {
             ageAndMaturityAsOfDate: '2026-11-13',
             startingBirdCount: 100,
             cumulativeMortality: 10,
@@ -574,6 +574,20 @@ describe('M5 shared sales contracts', () => {
                 liveBirdCount: 20,
                 effectiveFulfilledBirdCount: 70,
             }),
-        ).toMatchObject({ cumulativeMortality: 10, mortalityPercentage: '10', liveBirdCount: 20 });
+        ).toMatchObject({
+            startingBirdCount: 100,
+            cumulativeMortality: 10,
+            effectiveFulfilledBirdCount: 70,
+            mortalityPercentage: '10',
+            liveBirdCount: 20,
+        });
+        for (const invalid of [-1, 1.5, 101, '70'])
+            expect(
+                flockMetricsV2Schema.safeParse({
+                    ...legacy,
+                    effectiveFulfilledBirdCount: invalid,
+                    liveBirdCount: 20,
+                }).success,
+            ).toBe(false);
     });
 });

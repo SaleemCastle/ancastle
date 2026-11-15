@@ -75,8 +75,8 @@ export function FlockForm({
             {flock && <input type="hidden" name="flockId" value={flock.id} />}
             <p className="text-sm text-muted-foreground">
                 {flock ? `Code: ${flock.code}.` : 'A flock code is generated automatically.'}{' '}
-                Starting population is the placement count. Live population reflects recorded
-                activity.
+                Starting population is the placement count. Remaining birds reflect net mortality
+                and fulfilled sales; changing this baseline does not change either ledger.
             </p>
             <div className="grid gap-5 sm:grid-cols-2">
                 {fields.map(({ name, label, ...props }) => (

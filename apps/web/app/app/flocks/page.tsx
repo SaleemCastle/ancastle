@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { FLOCK_MATURITY_STATES, type FlockWithMetrics } from '@ancastle/types';
+import { FLOCK_MATURITY_STATES, type FlockWithMetricsV2 } from '@ancastle/types';
 import Link from 'next/link';
 import { flockApiQuerySchema } from '@ancastle/validation';
 import { ManagementPage } from '@/components/management/page';
@@ -62,7 +62,7 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                     value.set('page', String(page));
                     return href('/app/flocks') + '&' + value;
                 };
-                const columns: MasterDataColumn<FlockWithMetrics>[] = [
+                const columns: MasterDataColumn<FlockWithMetricsV2>[] = [
                     {
                         key: 'code',
                         header: 'Code',
@@ -100,8 +100,13 @@ export default function FlocksPage({ searchParams }: { searchParams: Promise<App
                     },
                     {
                         key: 'live',
-                        header: 'Live population',
+                        header: 'Remaining on-farm birds',
                         render: (flock) => flock.metrics.liveBirdCount,
+                    },
+                    {
+                        key: 'sales',
+                        header: 'Net fulfilled for sales',
+                        render: (flock) => flock.metrics.effectiveFulfilledBirdCount,
                     },
                     {
                         key: 'mortality',

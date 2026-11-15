@@ -4,7 +4,7 @@ import { createClient } from 'redis';
 import { createWebAuthFixture, closeWebAuthDatabase } from '../../api/test/web-auth-fixture.js';
 import type { StoredSession } from '../lib/auth/session-store';
 
-const proxy = 'http://127.0.0.1:4311';
+const proxy = process.env.ANCASTLE_E2E_PROXY_ORIGIN ?? 'http://127.0.0.1:4311';
 const redis = createClient({
     url: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
     socket: { reconnectStrategy: false },

@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 
 let counters = { login: 0, refresh: 0, logout: 0 };
 let mode = { unavailable: false, loginDelay: 0, contextUnavailable: false, contextDelay: 0 };
+let closing;
 
 const server = createServer(async (request, response) => {
     try {
@@ -65,12 +66,15 @@ const server = createServer(async (request, response) => {
         for await (const chunk of request) body += chunk;
         const headers = { 'Content-Type': 'application/json' };
         if (request.headers.authorization) headers.Authorization = request.headers.authorization;
-        const upstream = await fetch('http://127.0.0.1:4310' + path, {
-            method: request.method,
-            headers,
-            body: ['GET', 'HEAD'].includes(request.method ?? 'GET') ? undefined : body,
-            redirect: 'error',
-        });
+        const upstream = await fetch(
+            (process.env.API_INTERNAL_TARGET ?? 'http://127.0.0.1:4310') + path,
+            {
+                method: request.method,
+                headers,
+                body: ['GET', 'HEAD'].includes(request.method ?? 'GET') ? undefined : body,
+                redirect: 'error',
+            },
+        );
         response.writeHead(upstream.status, { 'Content-Type': 'application/json' });
         response.end(upstream.status === 204 ? undefined : await upstream.text());
     } catch {
@@ -78,6 +82,22 @@ const server = createServer(async (request, response) => {
         response.end('Fixture transport unavailable');
     }
 });
-server.listen(4311, '127.0.0.1');
-for (const signal of ['SIGINT', 'SIGTERM'])
-    process.on(signal, () => server.close(() => process.exit(0)));
+server.listen(Number(process.env.AUTH_PROXY_PORT ?? '4311'), '127.0.0.1');
+
+function closeServer() {
+    if (!closing) {
+        closing = new Promise((resolve) => {
+            server.close(() => {
+                if (process.connected) process.disconnect();
+                resolve();
+            });
+            server.closeAllConnections();
+        });
+    }
+    return closing;
+}
+
+process.on('message', (message) => {
+    if (message?.type === 'shutdown') void closeServer();
+});
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => void closeServer());

@@ -1,9 +1,5 @@
-import type {
-  Flock,
-  MortalityEvent,
-  FeedUsage,
-  FlockMetrics as FlockMetricsResponse,
-} from '@ancastle/types';
+import type { Flock, MortalityEvent, FeedUsage } from '@ancastle/types';
+import type { FlockMetricsV2 as FlockMetricsResponse } from '@ancastle/types';
 import type {
   Flock as FlockRecord,
   MortalityEvent as MortalityRecord,

@@ -13,6 +13,7 @@ describe('Deterministic flock metrics', () => {
     const metrics = calculateFlockMetrics(
       flock,
       mortality('0'),
+      mortality('0'),
       [],
       '2028-02-28',
     );
@@ -32,6 +33,7 @@ describe('Deterministic flock metrics', () => {
     const partial = calculateFlockMetrics(
       flock,
       mortality('1'),
+      mortality('0'),
       [],
       '2028-03-01',
     );
@@ -40,6 +42,7 @@ describe('Deterministic flock metrics', () => {
     const complete = calculateFlockMetrics(
       flock,
       mortality('3'),
+      mortality('0'),
       [],
       '2028-03-01',
     );
@@ -49,16 +52,59 @@ describe('Deterministic flock metrics', () => {
     expect(Prisma.Decimal.precision).toBe(20);
   });
 
+  it('subtracts fulfilled sales separately and leaves the M4 mortality percentage unchanged', () => {
+    const mixed = calculateFlockMetrics(
+      flock,
+      mortality('1'),
+      mortality('1'),
+      [],
+      '2028-03-01',
+    );
+    expect(mixed).toMatchObject({
+      startingBirdCount: 3,
+      cumulativeMortality: 1,
+      effectiveFulfilledBirdCount: 1,
+      liveBirdCount: 1,
+    });
+    expect(mixed.mortalityPercentage.toString()).toBe('33.333333');
+    const salesOnly = calculateFlockMetrics(
+      flock,
+      mortality('0'),
+      mortality('3'),
+      [],
+      '2028-03-01',
+    );
+    expect(salesOnly).toMatchObject({
+      cumulativeMortality: 0,
+      effectiveFulfilledBirdCount: 3,
+      liveBirdCount: 0,
+    });
+    expect(salesOnly.mortalityPercentage.toString()).toBe('0');
+  });
+
   it('uses completed calendar days/weeks across leap days and DST boundaries', () => {
     expect(
-      calculateFlockMetrics(flock, mortality('0'), [], '2028-03-05'),
+      calculateFlockMetrics(
+        flock,
+        mortality('0'),
+        mortality('0'),
+        [],
+        '2028-03-05',
+      ),
     ).toMatchObject({ ageDays: 6, ageWeeks: 0 });
     expect(
-      calculateFlockMetrics(flock, mortality('0'), [], '2028-03-06'),
+      calculateFlockMetrics(
+        flock,
+        mortality('0'),
+        mortality('0'),
+        [],
+        '2028-03-06',
+      ),
     ).toMatchObject({ ageDays: 7, ageWeeks: 1 });
     expect(
       calculateFlockMetrics(
         { ...flock, placementDate: '2028-03-11', expectedMaturityDate: null },
+        mortality('0'),
         mortality('0'),
         [],
         '2028-03-13',
@@ -68,14 +114,20 @@ describe('Deterministic flock metrics', () => {
 
   it('distinguishes before maturity, at/past maturity and absence of a maturity date', () => {
     expect(
-      calculateFlockMetrics(flock, mortality('0'), [], '2028-03-05'),
+      calculateFlockMetrics(
+        flock,
+        mortality('0'),
+        mortality('0'),
+        [],
+        '2028-03-05',
+      ),
     ).toMatchObject({
       daysToMaturity: 1,
       maturityState: 'BEFORE_EXPECTED_MATURITY',
     });
     for (const date of ['2028-03-06', '2028-03-07']) {
       expect(
-        calculateFlockMetrics(flock, mortality('0'), [], date),
+        calculateFlockMetrics(flock, mortality('0'), mortality('0'), [], date),
       ).toMatchObject({
         daysToMaturity: 0,
         maturityState: 'AT_OR_PAST_EXPECTED_MATURITY',
@@ -84,6 +136,7 @@ describe('Deterministic flock metrics', () => {
     expect(
       calculateFlockMetrics(
         { ...flock, expectedMaturityDate: null },
+        mortality('0'),
         mortality('0'),
         [],
         '2028-03-06',
@@ -97,7 +150,7 @@ describe('Deterministic flock metrics', () => {
   it('rejects pre-placement/invalid calendar input instead of producing negative or timezone-dependent age', () => {
     for (const date of ['2028-02-27', '2027-02-29', '2028-03-01T00:00:00Z']) {
       expect(() =>
-        calculateFlockMetrics(flock, mortality('0'), [], date),
+        calculateFlockMetrics(flock, mortality('0'), mortality('0'), [], date),
       ).toThrow(expect.objectContaining({ code: 'FLOCK_INVALID_AS_OF_DATE' }));
     }
   });
@@ -107,13 +160,29 @@ describe('Deterministic flock metrics', () => {
       calculateFlockMetrics(
         { ...flock, startingBirdCount: 0 },
         mortality('0'),
+        mortality('0'),
         [],
         '2028-03-01',
       ),
     ).toThrow(expect.objectContaining({ code: 'FLOCK_HISTORY_INVALID' }));
     for (const value of ['-1', '4', '1.5']) {
       expect(() =>
-        calculateFlockMetrics(flock, mortality(value), [], '2028-03-01'),
+        calculateFlockMetrics(
+          flock,
+          mortality(value),
+          mortality('0'),
+          [],
+          '2028-03-01',
+        ),
+      ).toThrow(expect.objectContaining({ code: 'FLOCK_HISTORY_INVALID' }));
+      expect(() =>
+        calculateFlockMetrics(
+          flock,
+          mortality('0'),
+          mortality(value),
+          [],
+          '2028-03-01',
+        ),
       ).toThrow(expect.objectContaining({ code: 'FLOCK_HISTORY_INVALID' }));
     }
   });

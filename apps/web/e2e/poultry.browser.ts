@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { createWebAuthFixture, closeWebAuthDatabase } from '../../api/test/web-auth-fixture.js';
 
+const apiOrigin = process.env.ANCASTLE_E2E_API_ORIGIN ?? 'http://127.0.0.1:4310';
+
 test('keeps lifecycle and expected maturity independent with paginated maturity filters', async ({
     page,
     request,
@@ -15,12 +17,12 @@ test('keeps lifecycle and expected maturity independent with paginated maturity 
             value.setUTCDate(value.getUTCDate() + offset);
             return value.toISOString().slice(0, 10);
         };
-        const login = await request.post('http://127.0.0.1:4310/api/auth/login', {
+        const login = await request.post(apiOrigin + '/api/auth/login', {
             data: { email: account.email, password: account.password },
         });
         expect(login.ok()).toBe(true);
         const token = (await login.json()).accessToken;
-        const base = `http://127.0.0.1:4310/api/organizations/${account.organizationId}/farms/${farm.id}/flocks`;
+        const base = `${apiOrigin}/api/organizations/${account.organizationId}/farms/${farm.id}/flocks`;
         const ids: string[] = [];
         for (const [name, maturity] of [
             ['Future A', calendarDate(2)],
@@ -102,7 +104,10 @@ test('keeps lifecycle and expected maturity independent with paginated maturity 
         const details = page.getByRole('region', { name: 'Flock details', exact: true });
         await expect(details).toContainText('Expected maturity reached');
         await expect(details).toContainText('0 days remaining');
-        await expect(details).toContainText('Live population100');
+        await expect(details).toContainText('Starting population100');
+        await expect(details).toContainText('Cumulative mortality0');
+        await expect(details).toContainText('Net fulfilled for sales0');
+        await expect(details).toContainText('Remaining on-farm birds100');
         await expect(details).toContainText('No feed usage recorded.');
         await expect(
             page.getByRole('status', { name: 'Status: Closed', exact: true }),
@@ -136,14 +141,14 @@ test('posts mortality and feed with authoritative refresh, safe reset and farm-s
     try {
         const farm = await account.addFarm('Poultry North', 'NORTH');
         const other = await account.addFarm('Poultry South', 'SOUTH');
-        const login = await request.post('http://127.0.0.1:4310/api/auth/login', {
+        const login = await request.post(apiOrigin + '/api/auth/login', {
             data: { email: account.email, password: account.password },
         });
         expect(login.ok()).toBe(true);
         const token = (await login.json()).accessToken;
         const api = async (path: string, data: object) => {
             const response = await request.post(
-                `http://127.0.0.1:4310/api/organizations/${account.organizationId}/${path}`,
+                `${apiOrigin}/api/organizations/${account.organizationId}/${path}`,
                 { headers: { Authorization: 'Bearer ' + token }, data },
             );
             expect(response.ok()).toBe(true);
@@ -154,6 +159,7 @@ test('posts mortality and feed with authoritative refresh, safe reset and farm-s
             placementDate: '2026-10-01',
             startingBirdCount: 100,
         });
+        await account.addSyntheticPoultrySaleDepletion(farm.id, flock, 10);
         const item = await api('inventory-items', {
             name: 'Layer feed',
             category: 'FEED',
@@ -187,7 +193,11 @@ test('posts mortality and feed with authoritative refresh, safe reset and farm-s
         await expect(mortality.getByLabel('Death count', { exact: true })).toHaveValue('');
         await expect(
             page.getByRole('region', { name: 'Flock details', exact: true }),
-        ).toContainText('Live population98');
+        ).toContainText('Starting population100');
+        const flockDetails = page.getByRole('region', { name: 'Flock details', exact: true });
+        await expect(flockDetails).toContainText('Cumulative mortality2');
+        await expect(flockDetails).toContainText('Net fulfilled for sales10');
+        await expect(flockDetails).toContainText('Remaining on-farm birds88');
         await expect(
             page.getByRole('region', { name: 'Mortality history', exact: true }),
         ).toContainText('MORT-ONE');
@@ -199,6 +209,9 @@ test('posts mortality and feed with authoritative refresh, safe reset and farm-s
         await mortality.getByLabel('Reference', { exact: true }).fill('MORT-TWO');
         await mortality.getByRole('button', { name: 'Record mortality', exact: true }).click();
         await expect(mortality.getByLabel('Death count', { exact: true })).toHaveValue('');
+        await expect(flockDetails).toContainText('Cumulative mortality3');
+        await expect(flockDetails).toContainText('Net fulfilled for sales10');
+        await expect(flockDetails).toContainText('Remaining on-farm birds87');
         const history = page.getByRole('region', { name: 'Mortality history', exact: true });
         await expect(history).toContainText('MORT-TWO');
         await history.getByRole('link', { name: 'Next', exact: true }).click();
@@ -227,6 +240,8 @@ test('posts mortality and feed with authoritative refresh, safe reset and farm-s
         await expect(
             page.getByRole('region', { name: 'Flock details', exact: true }),
         ).toContainText('1.125 KG');
+        await expect(flockDetails).toContainText('Net fulfilled for sales10');
+        await expect(flockDetails).toContainText('Remaining on-farm birds87');
         await expect(feed.getByRole('option', { name: /8.875 available/ })).toBeAttached();
         for (const width of [375, 1440]) {
             await page.setViewportSize({ width, height: 1000 });
@@ -259,12 +274,12 @@ test('keeps the selected inventory unit across a soft refresh and rejects the st
     const account = await createWebAuthFixture();
     try {
         const farm = await account.addFarm('Unit refresh farm', 'UNIT');
-        const login = await request.post('http://127.0.0.1:4310/api/auth/login', {
+        const login = await request.post(apiOrigin + '/api/auth/login', {
             data: { email: account.email, password: account.password },
         });
         expect(login.ok()).toBe(true);
         const headers = { Authorization: 'Bearer ' + (await login.json()).accessToken };
-        const base = `http://127.0.0.1:4310/api/organizations/${account.organizationId}`;
+        const base = `${apiOrigin}/api/organizations/${account.organizationId}`;
         const post = async (path: string, data: object) => {
             const response = await request.post(`${base}/${path}`, { headers, data });
             expect(response.ok()).toBe(true);

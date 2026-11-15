@@ -7,9 +7,7 @@ import {
 } from '@ancastle/types';
 import { paginationMetaSchema } from './pagination.js';
 
-/** Staged POP response shape. Existing M4 response types and consumers are untouched.
- * M5-POP must derive and enforce S-M-B in the shared domain service before activation.
- */
+/** Active M5-POP response shape. Current flock API routes require and validate S-M-B. */
 export const flockMetricsV2Schema = z
     .object({
         ageAndMaturityAsOfDate: z.iso.date(),
@@ -33,7 +31,18 @@ export const flockMetricsV2Schema = z
                 .strict(),
         ),
     })
-    .strict() satisfies z.ZodType<FlockMetricsV2>;
+    .strict()
+    .superRefine((metrics, ctx) => {
+        const committed = metrics.cumulativeMortality + metrics.effectiveFulfilledBirdCount;
+        const expectedLive = metrics.startingBirdCount - committed;
+        if (committed > metrics.startingBirdCount || metrics.liveBirdCount !== expectedLive) {
+            ctx.addIssue({
+                code: 'custom',
+                path: ['liveBirdCount'],
+                message: 'Live bird count must equal starting birds less net mortality and sales',
+            });
+        }
+    }) satisfies z.ZodType<FlockMetricsV2>;
 
 export const flockWithMetricsV2Schema = z
     .object({

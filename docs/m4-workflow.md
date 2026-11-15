@@ -88,6 +88,10 @@ effectiveMortality = SUM(original deathCount) - SUM(full reversal deathCount)
 liveBirdCount = startingBirdCount - effectiveMortality
 ```
 
+Historical M4 contract, superseded for current flock reads and guards by
+M5-POP: the current calculation also subtracts effective fulfilled sales
+depletion (`B`) while keeping sales separate from mortality.
+
 A post exceeding remaining population fails with `FLOCK_OVER_MORTALITY` and
 creates no event. The exact remaining population may be posted, producing zero
 live birds. Starting population is a definition baseline, not a live counter;
