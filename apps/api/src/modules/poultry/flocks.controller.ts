@@ -10,12 +10,14 @@ import {
 } from '@nestjs/common';
 import type {
   FlockResponse,
-  FlockDetailResponse,
-  FlockMetricsListResponse,
   MortalityResponse,
   MortalityListResponse,
   FeedUsageResponse,
   FeedUsageListResponse,
+} from '@ancastle/types';
+import type {
+  FlockDetailV2Response,
+  FlockMetricsListV2Response,
 } from '@ancastle/types';
 import {
   createFlockSchema,
@@ -72,7 +74,7 @@ export class FlocksController {
     @CurrentOrganization() context: OrganizationContext,
     @CurrentFarm() farm: FarmContext,
     @Query(new ZodValidationPipe(flockApiQuerySchema)) query: FlockApiQuery,
-  ): Promise<FlockMetricsListResponse> {
+  ): Promise<FlockMetricsListV2Response> {
     return this.flocks.list(context, farm.farmId, query);
   }
 
@@ -94,7 +96,7 @@ export class FlocksController {
     @Param('flockId', new ZodValidationPipe(resourceIdSchema)) id: string,
     @Query(new ZodValidationPipe(flockMetricsQuerySchema))
     query: FlockMetricsQuery,
-  ): Promise<FlockDetailResponse> {
+  ): Promise<FlockDetailV2Response> {
     return {
       data: await this.flocks.get(
         context,

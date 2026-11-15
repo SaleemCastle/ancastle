@@ -1,6 +1,8 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import { createWebAuthFixture, closeWebAuthDatabase } from '../../api/test/web-auth-fixture.js';
 
+const apiOrigin = process.env.ANCASTLE_E2E_API_ORIGIN ?? 'http://127.0.0.1:4310';
+
 async function signIn(page: Page, account: { email: string; password: string }) {
     await page.goto('/login');
     await page.getByLabel('Email', { exact: true }).fill(account.email);
@@ -12,12 +14,12 @@ async function setupApi(
     request: APIRequestContext,
     account: { email: string; password: string; organizationId: string },
 ) {
-    const login = await request.post('http://127.0.0.1:4310/api/auth/login', {
+    const login = await request.post(`${apiOrigin}/api/auth/login`, {
         data: { email: account.email, password: account.password },
     });
     expect(login.ok()).toBe(true);
     const headers = { Authorization: 'Bearer ' + (await login.json()).accessToken };
-    const base = `http://127.0.0.1:4310/api/organizations/${account.organizationId}`;
+    const base = `${apiOrigin}/api/organizations/${account.organizationId}`;
     return {
         headers,
         base,

@@ -80,8 +80,11 @@ the exclusive item lock:
 Generic M3 movements still permit an inactive owned item, subject to existing
 stock/authorization rules. Ordinary feed requires active FEED/flock definitions;
 full feed correction still permits the original inactive item or closed flock.
-M4 live population remains `startingBirdCount - effectiveMortality`. No sales
-depletion is included in metrics or guards.
+At M5-LOCK completion (before M5-POP), live population remained
+`startingBirdCount - effectiveMortality`, with no sales depletion in metrics or
+guards. M5-POP supersedes that population formula with
+`startingBirdCount - effectiveMortality - effectiveFulfilledBirdCount`; the
+sales term remains separate from mortality.
 
 ## Contract changes and callers
 
@@ -104,7 +107,8 @@ Affected routes:
 
 `createInventoryMovementSchema` and `postFeedUsageSchema` are the active shared
 contracts. Their staged V2 names remain aliases to the same schemas; they no longer
-represent separate accepted shapes. Population V2 remains staged.
+represent separate accepted shapes. The population-v2 contract and readers were
+implemented by M5-POP; this M5-LOCK report records the earlier state.
 
 Updated producers/consumers include:
 

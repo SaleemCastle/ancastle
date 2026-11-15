@@ -48,7 +48,8 @@ const messages: Record<string, string> = {
         'History or catalog references protect this unit or category. Create a new inventory item for a different definition.',
     INSUFFICIENT_INVENTORY_STOCK: 'This movement would reduce stock below zero.',
     FLOCK_NOT_FOUND: 'This flock is unavailable in the selected farm.',
-    FLOCK_OVER_MORTALITY: 'Starting population cannot be less than recorded mortality.',
+    FLOCK_OVER_MORTALITY:
+        'Starting population cannot be less than net mortality plus fulfilled sales.',
     FLOCK_CLOSED: 'This flock is closed.',
     FLOCK_CODE_LIMIT_REACHED: 'No additional flock codes are available.',
     FLOCK_CODE_GENERATION_FAILED: 'The flock could not be created. Please try again.',

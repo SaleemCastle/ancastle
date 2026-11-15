@@ -8,7 +8,7 @@ import { calculateFlockMetrics } from './flock-metrics.js';
 import {
   authorizedFlock,
   cumulativeFeedUsage,
-  effectiveMortality,
+  effectivePopulation,
 } from './poultry-history.js';
 
 @Injectable()
@@ -41,7 +41,7 @@ export class FlockMetricsService {
         farmId,
         flockId: flock.id,
       };
-      const mortality = await effectiveMortality(tx, scope);
+      const population = await effectivePopulation(tx, scope);
       const feed = await cumulativeFeedUsage(tx, scope);
       return calculateFlockMetrics(
         {
@@ -50,7 +50,8 @@ export class FlockMetricsService {
           expectedMaturityDate:
             flock.expectedMaturityDate?.toISOString().slice(0, 10) ?? null,
         },
-        mortality,
+        population.mortality,
+        population.fulfilledBirds,
         feed,
         ageAndMaturityAsOfDate,
       );

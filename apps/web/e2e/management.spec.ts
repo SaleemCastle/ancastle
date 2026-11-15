@@ -18,7 +18,7 @@ const redis = createClient({
     url: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
     socket: { reconnectStrategy: false },
 });
-const proxy = 'http://127.0.0.1:4311';
+const proxy = process.env.ANCASTLE_E2E_PROXY_ORIGIN ?? 'http://127.0.0.1:4311';
 test.beforeAll(async () => {
     await redis.connect();
 });
@@ -81,9 +81,11 @@ test('manages farm flocks through real APIs with responsive views and read-only 
     await expect(page).toHaveURL(/\/app\/flocks\/[0-9a-f-]{36}\?/);
     const detailUrl = page.url();
     await expect(page.getByRole('heading', { name: 'Layer placement', exact: true })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Flock details' })).toContainText(
-        'Live population100',
-    );
+    const flockDetails = page.getByRole('region', { name: 'Flock details' });
+    await expect(flockDetails).toContainText('Starting population100');
+    await expect(flockDetails).toContainText('Cumulative mortality0');
+    await expect(flockDetails).toContainText('Net fulfilled for sales0');
+    await expect(flockDetails).toContainText('Remaining on-farm birds100');
     await noPageOverflow();
     await page.getByRole('link', { name: 'Edit flock', exact: true }).click();
     const edit = page.getByRole('form', { name: 'Edit flock', exact: true });

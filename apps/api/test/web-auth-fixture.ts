@@ -91,6 +91,127 @@ export async function createWebAuthFixture(
         return farm;
       });
     },
+    // Synthetic ledger data is confined to disposable browser-test databases.
+    // M5-POP has no fulfilment posting service; this lets the real API and UI
+    // exercise a nonzero B response without introducing a production writer.
+    async addSyntheticPoultrySaleDepletion(
+      farmId: string,
+      flock: { id: string; code: string },
+      birdCount: number,
+    ) {
+      if (!Number.isSafeInteger(birdCount) || birdCount <= 0)
+        throw new Error('Synthetic sale depletion must be a positive integer');
+      return prisma.$transaction(async (tx) => {
+        const customer = await tx.customer.create({
+          data: {
+            organizationId: organization.id,
+            code: 'BROWSER-' + randomUUID(),
+            type: 'INDIVIDUAL',
+            name: 'Browser sale fixture',
+          },
+        });
+        const product = await tx.salesProduct.create({
+          data: {
+            organizationId: organization.id,
+            code: 'BROWSER-' + randomUUID(),
+            name: 'Browser poultry fixture',
+            kind: 'POULTRY',
+            unit: 'EACH',
+          },
+        });
+        await tx.poultryProductSource.create({
+          data: {
+            organizationId: organization.id,
+            farmId,
+            productId: product.id,
+            flockId: flock.id,
+            actorUserId: user.id,
+          },
+        });
+        const order = await tx.order.create({
+          data: {
+            organizationId: organization.id,
+            customerId: customer.id,
+            code: 'BROWSER-' + randomUUID(),
+            actorUserId: user.id,
+            customerCode: customer.code,
+            customerName: customer.name,
+            saleType: 'CASH',
+          },
+        });
+        const orderLine = await tx.orderLine.create({
+          data: {
+            organizationId: organization.id,
+            orderId: order.id,
+            lineNumber: 1,
+            productId: product.id,
+            productCode: product.code,
+            productName: product.name,
+            kind: 'POULTRY',
+            unit: 'EACH',
+            orderedQuantity: birdCount,
+            unitPrice: '1.0000',
+          },
+        });
+        const confirmed = await tx.order.update({
+          where: { id: order.id },
+          data: { commercialState: 'CONFIRMED', version: { increment: 1 } },
+        });
+        const occurredAt = new Date('2026-11-03T08:00:00.000Z');
+        const fulfilment = await tx.fulfilment.create({
+          data: {
+            organizationId: organization.id,
+            farmId,
+            orderId: order.id,
+            code: 'BROWSER-' + randomUUID(),
+            actorUserId: user.id,
+            occurredAt,
+            kind: 'POSTING',
+          },
+        });
+        const line = await tx.fulfilmentLine.create({
+          data: {
+            organizationId: organization.id,
+            farmId,
+            orderId: order.id,
+            fulfilmentId: fulfilment.id,
+            orderLineId: orderLine.id,
+            kind: 'POULTRY',
+            unit: 'EACH',
+            quantity: birdCount,
+            sourceCode: flock.code,
+            flockId: flock.id,
+            occurredAt,
+          },
+        });
+        await tx.flockSaleDepletion.create({
+          data: {
+            organizationId: organization.id,
+            farmId,
+            flockId: flock.id,
+            fulfilmentLineId: line.id,
+            birdCount,
+            actorUserId: user.id,
+            occurredAt,
+          },
+        });
+        await tx.fulfilmentCommand.create({
+          data: {
+            organizationId: organization.id,
+            farmId,
+            orderId: order.id,
+            fulfilmentId: fulfilment.id,
+            operation: 'POST',
+            key: randomUUID(),
+            requestHash: 'b'.repeat(64),
+            hashVersion: 1,
+            actorUserId: user.id,
+            orderVersion: confirmed.version,
+          },
+        });
+        return fulfilment.id;
+      });
+    },
     async addCustomer(
       name: string,
       settings: {

@@ -39,22 +39,55 @@ export const MetricDecimal = Prisma.Decimal.clone({
   rounding: Prisma.Decimal.ROUND_HALF_UP,
 });
 
-/** Current posted ledger, including every original and full reversal. SQL SUM
- * avoids overflowing either a PostgreSQL integer or a JavaScript number before
- * cancelling history. This is shared by reads and over-mortality enforcement.
+export interface EffectiveFlockPopulation {
+  mortality: Prisma.Decimal;
+  fulfilledBirds: Prisma.Decimal;
+}
+
+/** Read both append-only ledgers in one PostgreSQL statement snapshot. SQL SUM
+ * avoids overflowing an individual PostgreSQL integer or a JavaScript number
+ * before cancelling full reversals.
  */
+export async function effectivePopulation(
+  tx: Prisma.TransactionClient,
+  scope: FlockHistoryScope,
+): Promise<EffectiveFlockPopulation> {
+  const [result] = await tx.$queryRaw<
+    { mortality: string; fulfilledBirds: string }[]
+  >(Prisma.sql`
+    SELECT
+      COALESCE((SELECT SUM(CASE WHEN "reversesEventId" IS NULL
+        THEN "deathCount"::bigint ELSE -"deathCount"::bigint END)
+        FROM "mortality_events"
+        WHERE "organizationId" = ${scope.organizationId}::uuid
+          AND "farmId" = ${scope.farmId}::uuid
+          AND "flockId" = ${scope.flockId}::uuid), 0)::text AS mortality,
+      COALESCE((SELECT SUM(CASE WHEN "reversesDepletionId" IS NULL
+        THEN "birdCount"::bigint ELSE -"birdCount"::bigint END)
+        FROM "flock_sale_depletions"
+        WHERE "organizationId" = ${scope.organizationId}::uuid
+          AND "farmId" = ${scope.farmId}::uuid
+          AND "flockId" = ${scope.flockId}::uuid), 0)::text AS "fulfilledBirds"
+  `);
+  return {
+    mortality: new MetricDecimal(result!.mortality),
+    fulfilledBirds: new MetricDecimal(result!.fulfilledBirds),
+  };
+}
+
+/** Compatibility helper for callers that need only the established M4 metric. */
 export async function effectiveMortality(
   tx: Prisma.TransactionClient,
   scope: FlockHistoryScope,
 ): Promise<Prisma.Decimal> {
-  const [result] = await tx.$queryRaw<{ total: string }[]>(Prisma.sql`
-    SELECT COALESCE(SUM(CASE WHEN "reversesEventId" IS NULL
-      THEN "deathCount"::bigint ELSE -"deathCount"::bigint END), 0)::text AS total
-    FROM "mortality_events"
-    WHERE "organizationId" = ${scope.organizationId}::uuid
-      AND "farmId" = ${scope.farmId}::uuid AND "flockId" = ${scope.flockId}::uuid
-  `);
-  return new MetricDecimal(result.total);
+  return (await effectivePopulation(tx, scope)).mortality;
+}
+
+export async function effectiveFulfilledBirdCount(
+  tx: Prisma.TransactionClient,
+  scope: FlockHistoryScope,
+): Promise<Prisma.Decimal> {
+  return (await effectivePopulation(tx, scope)).fulfilledBirds;
 }
 
 export interface CumulativeFeedUsage {

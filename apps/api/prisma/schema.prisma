@@ -307,7 +307,7 @@ enum InventoryMovementReason {
   ADJUSTMENT
 }
 
-// A biological placement batch; live population is derived from mortality history.
+// A biological placement batch; live population derives from mortality and sale-depletion history.
 model Flock {
   id                   String    @id @default(uuid()) @db.Uuid
   organizationId       String    @db.Uuid

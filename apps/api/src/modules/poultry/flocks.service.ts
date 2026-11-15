@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import type {
   Flock,
-  FlockWithMetrics,
-  FlockMetricsListResponse,
   MortalityListResponse,
   FeedUsageListResponse,
+} from '@ancastle/types';
+import type {
+  FlockWithMetricsV2,
+  FlockMetricsListV2Response,
 } from '@ancastle/types';
 import {
   createFlockSchema,
@@ -22,7 +24,8 @@ import { FarmAccessService } from '../authorization/farm-access.service.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
 import { FlockMetricsService } from './flock-metrics.service.js';
 import { lockFlockMutation } from './flock-mutation-lock.js';
-import { authorizedFlock, effectiveMortality } from './poultry-history.js';
+import { authorizedFlock, effectivePopulation } from './poultry-history.js';
+import { calculateFlockPopulation } from './flock-metrics.js';
 import {
   flockDetails,
   metricDetails,
@@ -76,7 +79,7 @@ export class FlocksService {
     context: OrganizationContext,
     farmId: string,
     input: FlockApiQuery,
-  ): Promise<FlockMetricsListResponse> {
+  ): Promise<FlockMetricsListV2Response> {
     await this.farms.resolve(context, farmId);
     const where: Prisma.FlockWhereInput = {
       organizationId: context.organizationId,
@@ -102,7 +105,7 @@ export class FlocksService {
           orderBy: [{ code: 'asc' }, { id: 'asc' }],
         });
         const totalItems = await tx.flock.count({ where });
-        const data: FlockWithMetrics[] = [];
+        const data: FlockWithMetricsV2[] = [];
         for (const record of records) {
           data.push({
             ...flockDetails(record),
@@ -128,7 +131,7 @@ export class FlocksService {
     farmId: string,
     id: string,
     date: string,
-  ): Promise<FlockWithMetrics> {
+  ): Promise<FlockWithMetricsV2> {
     return this.prisma.$transaction(
       async (tx) => {
         const record = await authorizedFlock(
@@ -246,16 +249,22 @@ export class FlocksService {
           input.startingBirdCount !== undefined &&
           input.startingBirdCount !== record.startingBirdCount
         ) {
-          const mortality = await effectiveMortality(tx, {
+          const population = await effectivePopulation(tx, {
             organizationId: context.organizationId,
             farmId,
             flockId: id,
           });
-          if (mortality.gt(input.startingBirdCount))
-            throw new BusinessException(
-              'FLOCK_OVER_MORTALITY',
-              'Starting population cannot be less than effective mortality',
-            );
+          calculateFlockPopulation(
+            input.startingBirdCount,
+            population.mortality,
+            population.fulfilledBirds,
+            {
+              code: 'FLOCK_OVER_MORTALITY',
+              message:
+                'Starting population cannot be less than effective mortality and fulfilled sales',
+              status: 400,
+            },
+          );
         }
         const [updated] = await tx.flock.updateManyAndReturn({
           where: {

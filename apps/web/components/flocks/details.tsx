@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { FlockWithMetrics, FlockMetrics, InventoryItem } from '@ancastle/types';
+import type { FlockWithMetricsV2, FlockMetricsV2, InventoryItem } from '@ancastle/types';
 import { flockMaturityLabel, flockMaturityExplanation } from '@/lib/management/flocks';
 
 export function FlockStatus({ isActive }: { isActive: boolean }) {
@@ -18,7 +18,7 @@ export function FlockStatus({ isActive }: { isActive: boolean }) {
     );
 }
 
-export function FlockAge({ flock }: { flock: FlockWithMetrics }) {
+export function FlockAge({ flock }: { flock: FlockWithMetricsV2 }) {
     return (
         <div className="min-w-40">
             <p>
@@ -29,7 +29,7 @@ export function FlockAge({ flock }: { flock: FlockWithMetrics }) {
     );
 }
 
-export function FlockMaturity({ metrics }: { metrics: FlockMetrics }) {
+export function FlockMaturity({ metrics }: { metrics: FlockMetricsV2 }) {
     return (
         <div className="mt-1 space-y-1">
             <span
@@ -47,7 +47,7 @@ export function FlockMaturity({ metrics }: { metrics: FlockMetrics }) {
     );
 }
 
-export function FlockMortality({ metrics }: { metrics: FlockMetrics }) {
+export function FlockMortality({ metrics }: { metrics: FlockMetricsV2 }) {
     return (
         <div className="tabular-nums">
             <p>{metrics.cumulativeMortality} deaths</p>
@@ -62,7 +62,7 @@ export function FlockDetails({
     flock,
     feedItems,
 }: {
-    flock: FlockWithMetrics;
+    flock: FlockWithMetricsV2;
     feedItems?: ReadonlyMap<string, InventoryItem>;
 }) {
     const { metrics } = flock;
@@ -72,7 +72,8 @@ export function FlockDetails({
         ['Placement date', flock.placementDate],
         ['Expected maturity date', flock.expectedMaturityDate ?? 'Not provided'],
         ['Starting population', metrics.startingBirdCount],
-        ['Live population', metrics.liveBirdCount],
+        ['Remaining on-farm birds', metrics.liveBirdCount],
+        ['Net fulfilled for sales', metrics.effectiveFulfilledBirdCount],
         ['Cumulative mortality', metrics.cumulativeMortality],
         ['Mortality percentage', `${metrics.mortalityPercentage}%`],
         ['Age', `${metrics.ageDays} days (${metrics.ageWeeks} weeks)`],

@@ -121,7 +121,7 @@ it('rejects invalid population and safely surfaces API over-mortality errors', a
     expect(fake.api).not.toHaveBeenCalled();
     fake.api.mockRejectedValue(new ManagementApiError('FLOCK_OVER_MORTALITY'));
     expect(await updateFlockAction({}, form({ startingBirdCount: '2' }))).toEqual({
-        error: 'Starting population cannot be less than recorded mortality.',
+        error: 'Starting population cannot be less than net mortality plus fulfilled sales.',
     });
     expect(fake.revalidate).not.toHaveBeenCalled();
 });

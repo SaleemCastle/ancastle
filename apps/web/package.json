@@ -7,7 +7,7 @@
         "build": "next build",
         "start": "next start",
         "test": "vitest run",
-        "test:e2e": "playwright test",
+        "test:e2e": "node e2e/run-poultry.mjs playwright.config.ts",
         "lint": "eslint",
         "typecheck": "next typegen && tsc --noEmit"
     },

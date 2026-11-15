@@ -33,11 +33,13 @@ export const FLOCK_MATURITY_STATES = [
 ] as const;
 export type FlockMaturityState = (typeof FLOCK_MATURITY_STATES)[number];
 
+/** Legacy M4 metrics shape. Current flock endpoints use FlockMetricsV2 from sales-v2.ts. */
 export interface FlockMetrics {
     /** Calendar date for age/maturity only; ledger totals reflect all current postings. */
     ageAndMaturityAsOfDate: string;
     startingBirdCount: number;
     cumulativeMortality: number;
+    /** M4 semantics: startingBirdCount - cumulativeMortality. */
     liveBirdCount: number;
     /** Decimal percentage points, rounded half-up to six places. */
     mortalityPercentage: string;

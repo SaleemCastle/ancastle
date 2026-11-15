@@ -5,8 +5,9 @@ import { PrismaService } from '../../database/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { FarmAccessService } from '../authorization/farm-access.service.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
-import { authorizedFlock, effectiveMortality } from './poultry-history.js';
+import { authorizedFlock, effectivePopulation } from './poultry-history.js';
 import { lockFlockMutation } from './flock-mutation-lock.js';
+import { calculateFlockPopulation } from './flock-metrics.js';
 
 interface MortalityMetadata {
   occurredAt: Date;
@@ -53,17 +54,21 @@ export class MortalityService {
           input.flockId,
           true,
         );
-        const mortality = await effectiveMortality(tx, {
+        const population = await effectivePopulation(tx, {
           organizationId: context.organizationId,
           farmId,
           flockId: flock.id,
         });
-        if (mortality.plus(input.deathCount).gt(flock.startingBirdCount)) {
-          throw new BusinessException(
-            'FLOCK_OVER_MORTALITY',
-            'Mortality exceeds remaining live population',
-          );
-        }
+        calculateFlockPopulation(
+          flock.startingBirdCount,
+          population.mortality.plus(input.deathCount),
+          population.fulfilledBirds,
+          {
+            code: 'FLOCK_OVER_MORTALITY',
+            message: 'Mortality exceeds remaining live population',
+            status: 400,
+          },
+        );
         return tx.mortalityEvent.create({
           data: {
             organizationId: context.organizationId,
@@ -96,7 +101,23 @@ export class MortalityService {
       return await this.prisma.$transaction(
         async (tx) => {
           await lockFlockMutation(tx, context, farmId, flockId);
-          await authorizedFlock(tx, this.farms, context, farmId, flockId);
+          const flock = await authorizedFlock(
+            tx,
+            this.farms,
+            context,
+            farmId,
+            flockId,
+          );
+          const population = await effectivePopulation(tx, {
+            organizationId: context.organizationId,
+            farmId,
+            flockId: flock.id,
+          });
+          calculateFlockPopulation(
+            flock.startingBirdCount,
+            population.mortality,
+            population.fulfilledBirds,
+          );
           const original = await tx.mortalityEvent.findFirst({
             where: {
               id: eventId,
