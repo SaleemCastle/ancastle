@@ -74,7 +74,7 @@ export const commercialTermsSchema = z.discriminatedUnion('saleType', [
     z.object({ saleType: z.literal('CASH'), creditTermDays: z.null() }).strict(),
     z.object({ saleType: z.literal('CREDIT'), creditTermDays: version }).strict(),
 ]) satisfies z.ZodType<CommercialTerms>;
-// The period is due-date intent, not an invoice due date or evidence of payment.
+// CREDIT term days are intent, not an invoice due date or evidence of payment.
 
 const productDefinitionSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('POULTRY') }).strict(),
