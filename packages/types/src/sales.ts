@@ -107,6 +107,11 @@ export interface Order extends Omit<OrderSummary, 'customer'> {
     lines: OrderLine[];
 }
 
+/** Customer order history reports confirmation separately from creation. */
+export interface CustomerOrderHistoryEntry extends Order {
+    confirmedAt: string | null;
+}
+
 interface FulfilmentAllocation {
     id: string;
     orderLineId: string;
@@ -210,6 +215,7 @@ export type PoultryProductSourceResponse = ApiResponse<PoultryProductSource>;
 export type PoultryProductSourceListResponse = PaginatedResponse<PoultryProductSource>;
 export type OrderResponse = ApiResponse<Order>;
 export type OrderListResponse = PaginatedResponse<OrderSummary>;
+export type CustomerOrderHistoryResponse = PaginatedResponse<CustomerOrderHistoryEntry>;
 export type OrderDetailResponse = ApiResponse<OrderDetail>;
 export type OrderEventListResponse = PaginatedResponse<OrderEvent>;
 export type FulfilmentResponse = ApiResponse<Fulfilment>;

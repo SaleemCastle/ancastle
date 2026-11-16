@@ -8,5 +8,6 @@ import { SalesOrdersService } from './sales-orders.service.js';
   imports: [AuthModule, AuthorizationModule],
   controllers: [SalesOrdersController],
   providers: [SalesOrdersService],
+  exports: [SalesOrdersService],
 })
 export class SalesOrdersModule {}
