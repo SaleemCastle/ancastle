@@ -13,10 +13,12 @@ import type { CustomerListResponse, CustomerResponse } from '@ancastle/types';
 
 import {
   createCustomerSchema,
+  customerOrderHistoryQuerySchema,
   masterDataQuerySchema,
   resourceIdSchema,
   updateCustomerSchema,
   type CreateCustomerInput,
+  type CustomerOrderHistoryQuery,
   type MasterDataQuery,
   type UpdateCustomerInput,
 } from '@ancastle/validation';
@@ -32,12 +34,16 @@ import {
 } from '../authorization/require-permissions.decorator.js';
 import { CustomersService } from './customers.service.js';
 import { Permission } from '../authorization/permissions.js';
+import { SalesOrdersService } from '../sales-orders/sales-orders.service.js';
 
 @Controller('organizations/:organizationId/customers')
 @UseGuards(AuthGuard, AuthorizationGuard)
 @OrganizationParam()
 export class CustomersController {
-  constructor(private readonly customers: CustomersService) {}
+  constructor(
+    private readonly customers: CustomersService,
+    private readonly orders: SalesOrdersService,
+  ) {}
 
   @Get()
   @RequirePermissions(Permission.CUSTOMER_READ)
@@ -47,6 +53,18 @@ export class CustomersController {
     query: MasterDataQuery,
   ): Promise<CustomerListResponse> {
     return this.customers.list(context, query);
+  }
+
+  @Get(':customerId/orders')
+  @RequirePermissions(Permission.ORDER_READ)
+  orderHistory(
+    @CurrentOrganization() context: OrganizationContext,
+    @Param('customerId', new ZodValidationPipe(resourceIdSchema))
+    customerId: string,
+    @Query(new ZodValidationPipe(customerOrderHistoryQuerySchema))
+    query: CustomerOrderHistoryQuery,
+  ) {
+    return this.orders.customerHistory(context, customerId, query);
   }
 
   @Post()

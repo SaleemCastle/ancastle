@@ -4,11 +4,12 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import {
+  customerOrderHistoryResponseSchema,
   fulfilmentCommandResponseSchema,
   fulfilmentListResponseSchema,
   type PostFulfilmentInput,
 } from '@ancastle/validation';
-import type { Order } from '@ancastle/types';
+import type { CustomerOrderHistoryEntry, Order } from '@ancastle/types';
 import { temporaryDatabase } from '../../test/temporary-database.js';
 import { DatabaseModule } from '../../database/database.module.js';
 import { PrismaService } from '../../database/prisma.service.js';
@@ -24,6 +25,7 @@ import { FeedUsageService } from '../poultry/feed-usage.service.js';
 import { effectivePopulation } from '../poultry/poultry-history.js';
 import { SalesOrdersModule } from '../sales-orders/sales-orders.module.js';
 import { SalesOrdersService } from '../sales-orders/sales-orders.service.js';
+import { CustomersModule } from '../customers/customers.module.js';
 import { FulfilmentActivationService } from './fulfilment-activation.service.js';
 import { FulfilmentsModule } from './fulfilments.module.js';
 import { FulfilmentsService } from './fulfilments.service.js';
@@ -61,6 +63,10 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
   const api = () => request(app.getHttpServer());
   const route = (farm = farmId) =>
     `/api/organizations/${context.organizationId}/farms/${farm}`;
+  const customerHistoryRoute = (
+    customer = customerId,
+    organization = context.organizationId,
+  ) => `/api/organizations/${organization}/customers/${customer}/orders`;
   const body = (
     order: Order,
     kind: 'PRODUCE' | 'POULTRY' = 'PRODUCE',
@@ -132,6 +138,42 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
       expectedOrderVersion: draft.version,
     });
   }
+  async function draftOrder(kind: 'PRODUCE' | 'POULTRY' | 'MIXED' = 'PRODUCE') {
+    return orders.create(context, {
+      customerId,
+      currency: 'JMD',
+      terms: { saleType: 'CREDIT', creditTermDays: 30 },
+      lines: [
+        ...(kind !== 'POULTRY'
+          ? [
+              {
+                productId: produceId,
+                expectedProduct: {
+                  kind: 'PRODUCE' as const,
+                  unit: 'KG' as const,
+                  inventoryItemId: itemId,
+                },
+                quantity: '10',
+                unitPrice: '2.1250',
+              },
+            ]
+          : []),
+        ...(kind !== 'PRODUCE'
+          ? [
+              {
+                productId: poultryId,
+                expectedProduct: {
+                  kind: 'POULTRY' as const,
+                  unit: 'EACH' as const,
+                },
+                quantity: '10',
+                unitPrice: '10.0000',
+              },
+            ]
+          : []),
+      ],
+    });
+  }
   const post = (
     order: Order,
     input = body(order),
@@ -164,7 +206,12 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
     database = await temporaryDatabase();
     prisma = database.prisma;
     const module = await Test.createTestingModule({
-      imports: [DatabaseModule, SalesOrdersModule, FulfilmentsModule],
+      imports: [
+        DatabaseModule,
+        SalesOrdersModule,
+        FulfilmentsModule,
+        CustomersModule,
+      ],
     })
       .overrideProvider(PrismaService)
       .useValue(prisma)
@@ -1625,5 +1672,249 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
       receipts: 2,
       depletions: 2,
     });
+  });
+
+  it('derives customer purchases from posted quantities less reversals across order states', async () => {
+    const draft = await draftOrder('MIXED');
+    const confirmedDraft = await draftOrder('MIXED');
+    const confirmed = await orders.confirm(context, confirmedDraft.id, {
+      expectedOrderVersion: confirmedDraft.version,
+    });
+    const partial = await order('MIXED');
+    const partialInput = body(partial, 'PRODUCE', '2.375');
+    partialInput.allocations.push(...body(partial, 'POULTRY', '3').allocations);
+    await post(partial, partialInput);
+
+    const complete = await order('PRODUCE', '1');
+    await post(complete, body(complete, 'PRODUCE', '1'));
+
+    const reversed = await order('MIXED');
+    const reversedInput = body(reversed, 'PRODUCE', '4');
+    reversedInput.allocations.push(
+      ...body(reversed, 'POULTRY', '5').allocations,
+    );
+    const original = await post(reversed, reversedInput);
+    await service.reverse(
+      context,
+      farmId,
+      original.receipt.fulfilment.id,
+      randomUUID(),
+      reversal(original.receipt.orderVersion),
+    );
+
+    const cancelled = await order('PRODUCE');
+    const cancelledPost = await post(
+      cancelled,
+      body(cancelled, 'PRODUCE', '4.25'),
+    );
+    await orders.cancel(context, cancelled.id, {
+      expectedOrderVersion: cancelledPost.receipt.orderVersion,
+      reason: 'Close remaining demand',
+    });
+    await prisma.salesProduct.updateMany({
+      where: { organizationId: context.organizationId },
+      data: { name: 'Renamed catalog label' },
+    });
+    await prisma.customer.update({
+      where: { id: customerId },
+      data: { name: 'Renamed customer identity' },
+    });
+
+    const response = await api()
+      .get(customerHistoryRoute())
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(200);
+    expect(
+      customerOrderHistoryResponseSchema.safeParse(response.body).success,
+    ).toBe(true);
+    expect(response.body.meta.totalItems).toBe(6);
+    const historyEntries = response.body.data as CustomerOrderHistoryEntry[];
+    const byId = new Map(
+      historyEntries.map((entry) => [entry.id, entry] as const),
+    );
+    const draftEntry = byId.get(draft.id)!;
+    expect(draftEntry.commercialState).toBe('DRAFT');
+    expect(draftEntry.confirmedAt).toBeNull();
+    expect(
+      draftEntry.lines.map(
+        (line: { fulfilledQuantity: string }) => line.fulfilledQuantity,
+      ),
+    ).toEqual(['0', '0']);
+    const confirmedEntry = byId.get(confirmed.id)!;
+    expect(confirmedEntry.commercialState).toBe('CONFIRMED');
+    expect(confirmedEntry.confirmedAt).toEqual(expect.any(String));
+    expect(confirmedEntry.terms).toEqual({
+      saleType: 'CREDIT',
+      creditTermDays: 30,
+    });
+    expect(confirmedEntry.customer.name).toBe('Market');
+    expect(confirmedEntry.lines[0]).toMatchObject({
+      unitPrice: '2.1250',
+      lineAmount: '21.25',
+    });
+    expect(confirmedEntry.totalAmount).toBe('121.25');
+    expect(confirmedEntry.lines[0].fulfilledQuantity).toBe('0');
+    expect(confirmedEntry.lines[0].productName).toBe('Pumpkin');
+    expect(
+      byId
+        .get(partial.id)!
+        .lines.map(
+          (line: { fulfilledQuantity: string }) => line.fulfilledQuantity,
+        ),
+    ).toEqual(['2.375', '3']);
+    expect(byId.get(complete.id)!.lines[0].fulfilledQuantity).toBe('1');
+    expect(
+      byId
+        .get(reversed.id)!
+        .lines.map(
+          (line: { fulfilledQuantity: string }) => line.fulfilledQuantity,
+        ),
+    ).toEqual(['0', '0']);
+    expect(byId.get(cancelled.id)).toMatchObject({
+      commercialState: 'CANCELLED',
+      lines: [
+        {
+          orderedQuantity: '10',
+          fulfilledQuantity: '4.25',
+          remainingQuantity: '0',
+          cancelledQuantity: '5.75',
+        },
+      ],
+    });
+    for (const entry of response.body.data) {
+      for (const forbidden of [
+        'paidAmount',
+        'outstandingBalance',
+        'receivable',
+        'invoiceStatus',
+        'paymentStatus',
+        'creditUtilization',
+        'dueDate',
+      ])
+        expect(entry).not.toHaveProperty(forbidden);
+    }
+    expect(Object.keys(prisma)).not.toContain('invoice');
+    expect(Object.keys(prisma)).not.toContain('payment');
+  });
+
+  it('bounds, filters and stably paginates tenant-scoped customer history', async () => {
+    const drafts = await Promise.all([
+      draftOrder(),
+      draftOrder(),
+      draftOrder(),
+    ]);
+    const expected = await prisma.order.findMany({
+      where: {
+        organizationId: context.organizationId,
+        id: { in: drafts.map((entry) => entry.id) },
+      },
+      select: { id: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    const expectedIds = expected.map((entry) => entry.id);
+    const firstPage = await api()
+      .get(
+        `${customerHistoryRoute()}?page=1&pageSize=2&state=DRAFT&search=Market`,
+      )
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(200);
+    expect(
+      firstPage.body.data.map((entry: { id: string }) => entry.id),
+    ).toEqual(expectedIds.slice(0, 2));
+    expect(firstPage.body.meta).toMatchObject({
+      page: 1,
+      pageSize: 2,
+      totalItems: 3,
+      totalPages: 2,
+    });
+    const secondPage = await api()
+      .get(`${customerHistoryRoute()}?page=2&pageSize=2&state=DRAFT`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(200);
+    expect(
+      secondPage.body.data.map((entry: { id: string }) => entry.id),
+    ).toEqual(expectedIds.slice(2));
+    await api()
+      .get(`${customerHistoryRoute()}?pageSize=101`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(400);
+    await api()
+      .get(`${customerHistoryRoute()}?customerId=${randomUUID()}`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(400);
+
+    const confirmed = await order();
+    const progress = await api()
+      .get(`${customerHistoryRoute()}?state=CONFIRMED&progress=UNFULFILLED`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(200);
+    expect(progress.body.data.map((entry: { id: string }) => entry.id)).toEqual(
+      [confirmed.id],
+    );
+
+    const foreignOrganization = await prisma.organization.create({
+      data: { name: 'Foreign', slug: randomUUID() },
+    });
+    const foreignCustomer = await prisma.customer.create({
+      data: {
+        organizationId: foreignOrganization.id,
+        code: 'CUS-FOREIGN',
+        name: 'Restricted identity',
+        type: 'BUSINESS',
+      },
+    });
+    const missing = await api()
+      .get(customerHistoryRoute(foreignCustomer.id))
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(404);
+    expect(JSON.stringify(missing.body)).not.toContain(foreignCustomer.id);
+    expect(JSON.stringify(missing.body)).not.toContain('Restricted identity');
+    await api()
+      .get(customerHistoryRoute(foreignCustomer.id, foreignOrganization.id))
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(403);
+    await api().get(customerHistoryRoute()).expect(401);
+  });
+
+  it('gives STAFF whole-order commercial progress without unauthorized farm sources', async () => {
+    const mixed = await order('MIXED');
+    const firstInput = body(mixed, 'PRODUCE', '2.5');
+    firstInput.allocations.push(...body(mixed, 'POULTRY', '3').allocations);
+    const first = await post(mixed, firstInput);
+    const secondInput = body(
+      { ...mixed, version: first.receipt.orderVersion },
+      'PRODUCE',
+      '1.5',
+    );
+    secondInput.allocations.push({
+      kind: 'POULTRY',
+      orderLineId: mixed.lines.find((line) => line.kind === 'POULTRY')!.id,
+      flockId: secondFlock,
+      quantity: '2',
+    });
+    await post(
+      { ...mixed, version: first.receipt.orderVersion },
+      secondInput,
+      randomUUID(),
+      secondFarm,
+    );
+
+    const response = await api()
+      .get(`${customerHistoryRoute()}?progress=PARTIALLY_FULFILLED`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(200);
+    expect(response.body.data).toHaveLength(1);
+    const entry = response.body.data[0];
+    expect(entry.fulfilmentProgress).toBe('PARTIALLY_FULFILLED');
+    expect(
+      entry.lines.map(
+        (line: { fulfilledQuantity: string }) => line.fulfilledQuantity,
+      ),
+    ).toEqual(['4', '5']);
+    const serialized = JSON.stringify(response.body);
+    for (const sourceId of [farmId, secondFarm, flockId, secondFlock, itemId])
+      expect(serialized).not.toContain(sourceId);
+    expect(entry).not.toHaveProperty('sourceDetails');
+    expect(entry.lines[0]).not.toHaveProperty('allocations');
   });
 });

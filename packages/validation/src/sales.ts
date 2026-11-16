@@ -13,6 +13,7 @@ import {
     type Order,
     type OrderDetail,
     type OrderEvent,
+    type CustomerOrderHistoryEntry,
     type Fulfilment,
     type FlockSaleDepletion,
     type FulfilmentCommandReceipt,
@@ -223,6 +224,8 @@ export const orderQuerySchema = paginationQuerySchema
         search: z.string().trim().max(120).optional(),
     })
     .strict();
+/** Customer id comes from the scoped route, never a query/body override. */
+export const customerOrderHistoryQuerySchema = orderQuerySchema.omit({ customerId: true }).strict();
 
 export const fulfilmentAllocationInputSchema = z.discriminatedUnion('kind', [
     z
@@ -453,6 +456,10 @@ export const poultryProductSourceResponseSchema = resource(poultryProductSourceS
 export const poultryProductSourceListResponseSchema = collection(poultryProductSourceSchema);
 export const orderResponseSchema = resource(orderSchema);
 export const orderListResponseSchema = collection(orderSummarySchema);
+export const customerOrderHistoryEntrySchema = orderSchema
+    .extend({ confirmedAt: instant.nullable() })
+    .strict() satisfies z.ZodType<CustomerOrderHistoryEntry>;
+export const customerOrderHistoryResponseSchema = collection(customerOrderHistoryEntrySchema);
 export const fulfilmentResponseSchema = resource(fulfilmentSchema);
 export const fulfilmentListResponseSchema = collection(fulfilmentSchema);
 export const flockSaleDepletionResponseSchema = resource(flockSaleDepletionSchema);
@@ -530,6 +537,7 @@ export type AmendOrderInput = z.infer<typeof amendOrderSchema>;
 export type ConfirmOrderInput = z.infer<typeof confirmOrderSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 export type OrderQuery = z.infer<typeof orderQuerySchema>;
+export type CustomerOrderHistoryQuery = z.infer<typeof customerOrderHistoryQuerySchema>;
 export type OrderEventQuery = z.infer<typeof paginationQuerySchema>;
 export type FulfilmentAllocationInput = z.infer<typeof fulfilmentAllocationInputSchema>;
 export type PostFulfilmentInput = z.infer<typeof postFulfilmentSchema>;

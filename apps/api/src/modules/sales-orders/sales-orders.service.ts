@@ -6,12 +6,15 @@ import type {
   OrderEvent,
   OrderLine,
   OrderSummary,
+  CustomerOrderHistoryEntry,
+  CustomerOrderHistoryResponse,
 } from '@ancastle/types';
 import type {
   AmendOrderInput,
   CancelOrderInput,
   ConfirmOrderInput,
   CreateOrderInput,
+  CustomerOrderHistoryQuery,
   OrderEventQuery,
   OrderQuery,
 } from '@ancastle/validation';
@@ -25,6 +28,20 @@ const SalesDecimal = Prisma.Decimal.clone({
   precision: 80,
   rounding: Prisma.Decimal.ROUND_HALF_UP,
 });
+
+const orderLineSelect = {
+  id: true,
+  lineNumber: true,
+  productId: true,
+  productCode: true,
+  productName: true,
+  kind: true,
+  unit: true,
+  inventoryItemId: true,
+  orderedQuantity: true,
+  unitPrice: true,
+  isRemoved: true,
+} satisfies Prisma.OrderLineSelect;
 
 const orderSelect = {
   id: true,
@@ -45,17 +62,7 @@ const orderSelect = {
   updatedAt: true,
   lines: {
     select: {
-      id: true,
-      lineNumber: true,
-      productId: true,
-      productCode: true,
-      productName: true,
-      kind: true,
-      unit: true,
-      inventoryItemId: true,
-      orderedQuantity: true,
-      unitPrice: true,
-      isRemoved: true,
+      ...orderLineSelect,
       allocations: {
         select: { quantity: true, reversesLineId: true },
       },
@@ -64,6 +71,22 @@ const orderSelect = {
   },
 } satisfies Prisma.OrderSelect;
 type OrderRecord = Prisma.OrderGetPayload<{ select: typeof orderSelect }>;
+
+// Customer history aggregates allocations in SQL, so this page selector never
+// loads an unbounded nested event relation.
+const customerHistorySelect = {
+  ...orderSelect,
+  lines: { select: orderLineSelect, orderBy: { lineNumber: 'asc' } },
+} satisfies Prisma.OrderSelect;
+type CustomerHistoryRecord = Prisma.OrderGetPayload<{
+  select: typeof customerHistorySelect;
+}>;
+type ProjectedLineRecord = Omit<OrderRecord['lines'][number], 'allocations'> & {
+  allocations?: OrderRecord['lines'][number]['allocations'];
+};
+type ProjectedOrderRecord = Omit<OrderRecord, 'lines'> & {
+  lines: ProjectedLineRecord[];
+};
 
 const productSelect = {
   id: true,
@@ -118,8 +141,8 @@ function canonicalTerms(
     : { saleType: 'CREDIT', creditTermDays: creditTermDays! };
 }
 
-function effectiveQuantity(line: OrderRecord['lines'][number]): Prisma.Decimal {
-  return line.allocations.reduce(
+function effectiveQuantity(line: ProjectedLineRecord): Prisma.Decimal {
+  return (line.allocations ?? []).reduce(
     (total, allocation) =>
       allocation.reversesLineId === null
         ? total.plus(allocation.quantity)
@@ -141,11 +164,17 @@ function lineProgress(fulfilled: Prisma.Decimal, quantity: Prisma.Decimal) {
   return 'PARTIALLY_FULFILLED' as const;
 }
 
-function projectOrder(record: OrderRecord): Order {
+function projectOrder(
+  record: ProjectedOrderRecord,
+  netFulfilledByLine?: ReadonlyMap<string, Prisma.Decimal>,
+): Order {
   const activeLines = record.lines.filter((line) => !line.isRemoved);
   const quantities = new Map<string, Prisma.Decimal>();
   for (const line of record.lines) {
-    const fulfilled = effectiveQuantity(line);
+    const fulfilled =
+      record.commercialState === 'DRAFT'
+        ? new SalesDecimal(0)
+        : (netFulfilledByLine?.get(line.id) ?? effectiveQuantity(line));
     if (
       fulfilled.isNegative() ||
       fulfilled.gt(line.orderedQuantity) ||
@@ -785,6 +814,130 @@ export class SalesOrdersService {
     );
   }
 
+  async customerHistory(
+    context: OrganizationContext,
+    customerId: string,
+    input: CustomerOrderHistoryQuery,
+  ): Promise<CustomerOrderHistoryResponse> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const customer = await tx.customer.findFirst({
+          where: { id: customerId, organizationId: context.organizationId },
+          select: { id: true },
+        });
+        if (!customer) throw customerMissing();
+
+        const query: OrderQuery = { ...input, customerId: customer.id };
+        const where: Prisma.OrderWhereInput = {
+          organizationId: context.organizationId,
+          customerId: customer.id,
+          commercialState: input.state,
+          ...(input.search
+            ? {
+                OR: [
+                  { code: { contains: input.search, mode: 'insensitive' } },
+                  {
+                    customerCode: {
+                      contains: input.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                  {
+                    customerName: {
+                      contains: input.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                ],
+              }
+            : {}),
+        };
+
+        let records: CustomerHistoryRecord[];
+        let totalItems: number;
+        if (input.progress) {
+          const page = await this.progressFilteredIds(tx, query, context);
+          const selected = page.ids.length
+            ? await tx.order.findMany({
+                where: {
+                  organizationId: context.organizationId,
+                  customerId: customer.id,
+                  id: { in: page.ids },
+                },
+                select: customerHistorySelect,
+              })
+            : [];
+          const byId = new Map(selected.map((record) => [record.id, record]));
+          records = page.ids
+            .map((id) => byId.get(id))
+            .filter((record): record is CustomerHistoryRecord => !!record);
+          totalItems = page.totalItems;
+        } else {
+          [records, totalItems] = await Promise.all([
+            tx.order.findMany({
+              where,
+              select: customerHistorySelect,
+              skip: (input.page - 1) * input.pageSize,
+              take: input.pageSize,
+              orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            }),
+            tx.order.count({ where }),
+          ]);
+        }
+
+        const orderIds = records.map((record) => record.id);
+        if (orderIds.length === 0) {
+          return { data: [], meta: this.pageMeta(input, totalItems) };
+        }
+        const orderIdParameters = orderIds.map((id) => Prisma.sql`${id}::uuid`);
+        const [allocationTotals, confirmationRows] = await Promise.all([
+          tx.$queryRaw<Array<{ orderLineId: string; fulfilled: string }>>(
+            Prisma.sql`
+              SELECT f."orderLineId",
+                SUM(CASE WHEN f."reversesLineId" IS NULL THEN f."quantity"
+                    ELSE -f."quantity" END)::text AS fulfilled
+              FROM "fulfilment_lines" f
+              WHERE f."organizationId" = ${context.organizationId}::uuid
+                AND f."orderId" IN (${Prisma.join(orderIdParameters)})
+              GROUP BY f."orderLineId"
+            `,
+          ),
+          tx.$queryRaw<Array<{ orderId: string; confirmedAt: Date }>>(
+            Prisma.sql`
+              SELECT DISTINCT ON (e."orderId") e."orderId", e."createdAt" AS "confirmedAt"
+              FROM "order_events" e
+              WHERE e."organizationId" = ${context.organizationId}::uuid
+                AND e."action" = 'CONFIRMED'::"OrderEventAction"
+                AND e."orderId" IN (${Prisma.join(orderIdParameters)})
+              ORDER BY e."orderId", e."createdAt", e."id"
+            `,
+          ),
+        ]);
+        const fulfilledByLine = new Map(
+          allocationTotals.map(
+            ({ orderLineId, fulfilled }) =>
+              [orderLineId, new SalesDecimal(fulfilled)] as const,
+          ),
+        );
+        const confirmationByOrder = new Map(
+          confirmationRows.map(({ orderId, confirmedAt }) => [
+            orderId,
+            confirmedAt.toISOString(),
+          ]),
+        );
+        const data: CustomerOrderHistoryEntry[] = records.map((record) => ({
+          ...projectOrder(record, fulfilledByLine),
+          confirmedAt: confirmationByOrder.get(record.id) ?? null,
+        }));
+        return {
+          data,
+          meta: this.pageMeta(input, totalItems),
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
   async events(
     context: OrganizationContext,
     orderId: string,
@@ -904,53 +1057,56 @@ export class SalesOrdersService {
     input: OrderQuery,
     context: OrganizationContext,
   ) {
-    const filters: Prisma.Sql[] = [
+    const scopeFilters: Prisma.Sql[] = [
       Prisma.sql`o."organizationId" = ${context.organizationId}::uuid`,
     ];
     if (input.customerId)
-      filters.push(Prisma.sql`o."customerId" = ${input.customerId}::uuid`);
+      scopeFilters.push(Prisma.sql`o."customerId" = ${input.customerId}::uuid`);
     if (input.state)
-      filters.push(Prisma.sql`o."commercialState"::text = ${input.state}`);
+      scopeFilters.push(Prisma.sql`o."commercialState"::text = ${input.state}`);
     if (input.search)
-      filters.push(
+      scopeFilters.push(
         Prisma.sql`(o."code" ILIKE '%' || ${input.search} || '%' OR o."customerCode" ILIKE '%' || ${input.search} || '%' OR o."customerName" ILIKE '%' || ${input.search} || '%')`,
       );
-    filters.push(Prisma.sql`p.progress = ${input.progress}`);
+    const progressFilter = Prisma.sql`p.progress = ${input.progress}`;
     const cte = Prisma.sql`
-      WITH line_totals AS (
-        SELECT l."orderId", l."id", l."isRemoved", l."orderedQuantity",
-          COALESCE(SUM(CASE WHEN f."reversesLineId" IS NULL THEN f."quantity" ELSE -f."quantity" END), 0) AS fulfilled
-        FROM "order_lines" l
-        LEFT JOIN "fulfilment_lines" f ON f."organizationId" = l."organizationId"
-          AND f."orderId" = l."orderId" AND f."orderLineId" = l."id"
-        WHERE l."organizationId" = ${context.organizationId}::uuid
-        GROUP BY l."orderId", l."id", l."isRemoved", l."orderedQuantity"
-      ), order_progress AS (
-        SELECT o."id", CASE
-          WHEN o."commercialState" = 'DRAFT' THEN NULL
-          WHEN COUNT(t."id") FILTER (WHERE NOT t."isRemoved") = 0 THEN NULL
-          WHEN COALESCE(SUM(t.fulfilled) FILTER (WHERE NOT t."isRemoved"), 0) = 0 THEN 'UNFULFILLED'
-          WHEN SUM(t.fulfilled) FILTER (WHERE NOT t."isRemoved") = SUM(t."orderedQuantity") FILTER (WHERE NOT t."isRemoved") THEN 'FULFILLED'
-          ELSE 'PARTIALLY_FULFILLED' END AS progress
-        FROM "orders" o
-        LEFT JOIN line_totals t ON t."orderId" = o."id"
-        WHERE o."organizationId" = ${context.organizationId}::uuid
-        GROUP BY o."id"
-      )
-    `;
+        WITH scoped_orders AS (
+          SELECT o."id", o."createdAt", o."commercialState"
+          FROM "orders" o
+          WHERE ${Prisma.join(scopeFilters, ' AND ')}
+        ), line_totals AS (
+          SELECT l."orderId", l."id", l."isRemoved", l."orderedQuantity",
+            COALESCE(SUM(CASE WHEN f."reversesLineId" IS NULL THEN f."quantity" ELSE -f."quantity" END), 0) AS fulfilled
+          FROM scoped_orders o
+          JOIN "order_lines" l ON l."organizationId" = ${context.organizationId}::uuid AND l."orderId" = o."id"
+          LEFT JOIN "fulfilment_lines" f ON f."organizationId" = l."organizationId"
+            AND f."orderId" = l."orderId" AND f."orderLineId" = l."id"
+          GROUP BY l."orderId", l."id", l."isRemoved", l."orderedQuantity"
+        ), order_progress AS (
+          SELECT o."id", CASE
+            WHEN o."commercialState" = 'DRAFT' THEN NULL
+            WHEN COUNT(t."id") FILTER (WHERE NOT t."isRemoved") = 0 THEN NULL
+            WHEN COALESCE(SUM(t.fulfilled) FILTER (WHERE NOT t."isRemoved"), 0) = 0 THEN 'UNFULFILLED'
+            WHEN SUM(t.fulfilled) FILTER (WHERE NOT t."isRemoved") = SUM(t."orderedQuantity") FILTER (WHERE NOT t."isRemoved") THEN 'FULFILLED'
+            ELSE 'PARTIALLY_FULFILLED' END AS progress
+          FROM scoped_orders o
+          LEFT JOIN line_totals t ON t."orderId" = o."id"
+          GROUP BY o."id", o."commercialState"
+        )
+      `;
     const [rows, countRows] = await Promise.all([
       tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         ${cte}
-        SELECT o."id" FROM "orders" o JOIN order_progress p ON p."id" = o."id"
-        WHERE ${Prisma.join(filters, ' AND ')}
+        SELECT o."id" FROM scoped_orders o JOIN order_progress p ON p."id" = o."id"
+        WHERE ${progressFilter}
         ORDER BY o."createdAt" DESC, o."id" DESC
         LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}
       `),
       tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
         ${cte}
-        SELECT COUNT(*)::bigint AS count FROM "orders" o
+        SELECT COUNT(*)::bigint AS count FROM scoped_orders o
         JOIN order_progress p ON p."id" = o."id"
-        WHERE ${Prisma.join(filters, ' AND ')}
+        WHERE ${progressFilter}
       `),
     ]);
     return {

@@ -15,6 +15,8 @@ import {
     fulfilmentRequestHeadersSchema,
     salesProductQuerySchema,
     orderQuerySchema,
+    customerOrderHistoryQuerySchema,
+    customerOrderHistoryResponseSchema,
     fulfilmentQuerySchema,
     orderSchema,
     orderDetailResponseSchema,
@@ -539,6 +541,39 @@ describe('M5 shared sales contracts', () => {
         expect(orderQuerySchema.safeParse({ state: 'PAID' }).success).toBe(false);
         expect(fulfilmentQuerySchema.safeParse({ kind: 'RETURN' }).success).toBe(false);
         expect(salesProductQuerySchema.safeParse({ kind: 'LIVESTOCK' }).success).toBe(false);
+    });
+
+    it('keeps customer history filters strict and response commercial-only', () => {
+        expect(
+            customerOrderHistoryQuerySchema.parse({
+                state: 'CONFIRMED',
+                progress: 'PARTIALLY_FULFILLED',
+            }),
+        ).toMatchObject({ page: 1, pageSize: 20, state: 'CONFIRMED' });
+        expect(customerOrderHistoryQuerySchema.safeParse({ customerId }).success).toBe(false);
+        expect(customerOrderHistoryQuerySchema.safeParse({ pageSize: 101 }).success).toBe(false);
+        const response = {
+            data: [
+                {
+                    ...order,
+                    confirmedAt: at,
+                },
+            ],
+            meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
+        };
+        expect(customerOrderHistoryResponseSchema.safeParse(response).success).toBe(true);
+        expect(
+            customerOrderHistoryResponseSchema.safeParse({
+                ...response,
+                data: [{ ...response.data[0], sourceDetails: { visibility: 'REDACTED' } }],
+            }).success,
+        ).toBe(false);
+        expect(
+            customerOrderHistoryResponseSchema.safeParse({
+                ...response,
+                data: [{ ...response.data[0], paidAmount: '1.00' }],
+            }).success,
+        ).toBe(false);
     });
 
     it('activates LOCK unit and POP population v2 contracts', () => {
