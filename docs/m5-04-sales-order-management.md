@@ -290,4 +290,10 @@ passed (208 tests), 15 suites failed during module loading because the fresh
 checkout had no built `@ancastle/validation` / `@ancastle/types` entry points.
 Validation, web, build, and format steps were skipped by Actions after that
 failure. The explicit shared-package builds above address the root cause; the
-updated workflow needs a new hosted CI run before merge.
+updated workflow was verified by hosted CI run
+[#144](https://github.com/SaleemCastle/ancastle/actions/runs/43795246910) on
+commit `f5fdf32`. The job passed install, Prisma generation, lint, typecheck,
+all 13 database migrations, shared dependency builds, API/validation/web test
+steps, build and format. This run verifies the CI sequencing and clean-checkout
+dependency fix. Any later PR-head commit still requires its own successful
+required checks before merge.
