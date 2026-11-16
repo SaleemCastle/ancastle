@@ -798,7 +798,20 @@ datasource: {url: process.env.DATABASE_URL}});`,
 
   it('freezes confirmed customer/line snapshots and prevents reopening or deleting commercial history', async () => {
     await withFixture(async (tx, f) => {
+      // Commercial terms are editable while draft and become part of the frozen
+      // snapshot on confirmation; payment/due-date state is not represented here.
+      await tx.order.update({
+        where: { id: f.order.id },
+        data: {
+          saleType: 'CREDIT',
+          creditTermDays: 30,
+          version: { increment: 1 },
+        },
+      });
       await confirm(tx, f);
+      expect(
+        await tx.order.findUniqueOrThrow({ where: { id: f.order.id } }),
+      ).toMatchObject({ saleType: 'CREDIT', creditTermDays: 30 });
       await tx.customer.update({
         where: { id: f.customer.id },
         data: { name: 'Renamed' },
@@ -819,6 +832,12 @@ datasource: {url: process.env.DATABASE_URL}});`,
         tx.order.update({
           where: { id: f.order.id },
           data: { customerName: 'Changed', version: { increment: 1 } },
+        }),
+      );
+      await rejects(tx, () =>
+        tx.order.update({
+          where: { id: f.order.id },
+          data: { creditTermDays: 60, version: { increment: 1 } },
         }),
       );
       await rejects(tx, () =>
@@ -844,6 +863,16 @@ datasource: {url: process.env.DATABASE_URL}});`,
         tx.order.update({
           where: { id: f.order.id },
           data: { commercialState: 'CONFIRMED', version: { increment: 1 } },
+        }),
+      );
+      await rejects(tx, () =>
+        tx.order.update({
+          where: { id: f.order.id },
+          data: {
+            saleType: 'CASH',
+            creditTermDays: null,
+            version: { increment: 1 },
+          },
         }),
       );
     });

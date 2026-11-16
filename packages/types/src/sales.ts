@@ -20,6 +20,7 @@ export type SalesQuantity = string;
 export type SalesUnitPrice = string;
 export type OrderAmount = string;
 
+/** CREDIT term days are intent only; M6 derives any invoice due date. */
 export type CommercialTerms =
     { saleType: 'CASH'; creditTermDays: null } | { saleType: 'CREDIT'; creditTermDays: number };
 
