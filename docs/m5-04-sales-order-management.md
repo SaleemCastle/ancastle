@@ -245,19 +245,23 @@ constrained package runs for repeatable verification.
 
 The GitHub Actions workflow previously used one `pnpm test` step. That invokes
 Turbo, which schedules the API, validation and web test tasks concurrently.
-The workflow now runs the package scripts in three sequential steps, keeping
-the existing API environment (`DATABASE_URL`, `REDIS_URL`, `setup-env.ts`) and
-using two Vitest workers for API. Validation and web use their existing Vitest
-scripts without added timeout or worker overrides. The tests and migration
-coverage remain enabled; the other CI checks and their order are unchanged.
+The first direct-package workflow attempt exposed a clean-checkout dependency:
+API Vitest resolves `@ancastle/types` and `@ancastle/validation` through their
+`dist` exports, which do not exist until built. The workflow now builds those
+two shared test dependencies explicitly, then runs the package scripts in
+three sequential steps, keeping the existing API environment
+(`DATABASE_URL`, `REDIS_URL`, `setup-env.ts`) and using two Vitest workers for
+API. Validation and web use their existing Vitest scripts without added
+timeout or worker overrides. The tests and migration coverage remain enabled;
+the other CI checks and their order are unchanged.
 
 Sequential regression results from 2026-11-15:
 
 | Exact command                                                                                                  | Result                             |  Elapsed |
 | -------------------------------------------------------------------------------------------------------------- | ---------------------------------- | -------: |
-| `pnpm --filter @ancastle/api test -- --maxWorkers=2`                                                           | Exit 0; 42 files, 466 tests passed | 259.07 s |
-| `pnpm --filter @ancastle/validation test`                                                                      | Exit 0; 8 files, 178 tests passed  |  14.42 s |
-| `pnpm --filter @ancastle/web test`                                                                             | Exit 0; 13 files, 116 tests passed |  23.52 s |
+| `pnpm --filter @ancastle/api test -- --maxWorkers=2`                                                           | Exit 0; 42 files, 466 tests passed | 200.58 s |
+| `pnpm --filter @ancastle/validation test`                                                                      | Exit 0; 8 files, 178 tests passed  |   8.52 s |
+| `pnpm --filter @ancastle/web test`                                                                             | Exit 0; 13 files, 116 tests passed |  22.25 s |
 | `pnpm --filter @ancastle/api test -- --maxWorkers=2 --reporter=verbose src/database/sales.persistence.spec.ts` | Exit 0; 1 file, 16 tests passed    |  83.85 s |
 
 The standalone migration run printed an elapsed setup of **50,143 ms** for
@@ -271,6 +275,19 @@ retained as a change.
 Final quality gates after the CI and documentation edits: `pnpm format:check`,
 `pnpm lint`, `pnpm typecheck`, `pnpm build`, and `git diff --check` all passed.
 
+For the final sequential rerun, the shared dependencies were first built using
+`pnpm --filter @ancastle/types build` and
+`pnpm --filter @ancastle/validation build` (both exit 0); these are the new CI
+pre-test steps that make the direct package invocation work from a fresh
+checkout.
+
 The locally executed GitHub Actions equivalent passes all package suites
 sequentially. Hosted required CI still must pass on the resulting PR commit
 before merge; this local evidence does not substitute for branch protection.
+
+Hosted CI attempt for commit `104e2a9` failed at `Test API`: after 27 API files
+passed (208 tests), 15 suites failed during module loading because the fresh
+checkout had no built `@ancastle/validation` / `@ancastle/types` entry points.
+Validation, web, build, and format steps were skipped by Actions after that
+failure. The explicit shared-package builds above address the root cause; the
+updated workflow needs a new hosted CI run before merge.
