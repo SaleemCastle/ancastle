@@ -14,6 +14,10 @@ export const rolePermissions: Record<
     Permission.SALES_PRODUCT_READ,
     Permission.SALES_PRODUCT_MANAGE,
     Permission.SALES_PRODUCT_SOURCE_MANAGE,
+    Permission.ORDER_READ,
+    Permission.ORDER_MANAGE,
+    Permission.ORDER_CONFIRM,
+    Permission.ORDER_CANCEL,
     Permission.ORGANIZATION_READ,
     Permission.ORGANIZATION_UPDATE,
 
@@ -55,6 +59,10 @@ export const rolePermissions: Record<
     Permission.SALES_PRODUCT_READ,
     Permission.SALES_PRODUCT_MANAGE,
     Permission.SALES_PRODUCT_SOURCE_MANAGE,
+    Permission.ORDER_READ,
+    Permission.ORDER_MANAGE,
+    Permission.ORDER_CONFIRM,
+    Permission.ORDER_CANCEL,
     Permission.ORGANIZATION_READ,
 
     Permission.FARM_READ,
@@ -84,6 +92,7 @@ export const rolePermissions: Record<
 
   [MembershipRole.STAFF]: [
     Permission.SALES_PRODUCT_READ,
+    Permission.ORDER_READ,
     Permission.ORGANIZATION_READ,
     Permission.CUSTOMER_READ,
     Permission.SUPPLIER_READ,

@@ -183,6 +183,16 @@ export type OrderSourceDetails = RedactedOrderSources | AuthorizedOrderSources;
 export interface OrderDetail extends Order {
     sourceDetails: OrderSourceDetails;
 }
+/** Commercial audit facts only; operational source identifiers are never exposed here. */
+export interface OrderEvent {
+    id: string;
+    action: 'CREATED' | 'AMENDED' | 'CONFIRMED' | 'CANCELLED';
+    orderVersion: number;
+    actorUserId: string;
+    reason: string | null;
+    commercialChanges: Record<string, unknown>;
+    createdAt: string;
+}
 export type RedactedOrderDetail = Order & { sourceDetails: RedactedOrderSources };
 export type AuthorizedOrderDetail = Order & { sourceDetails: AuthorizedOrderSources };
 
@@ -201,6 +211,7 @@ export type PoultryProductSourceListResponse = PaginatedResponse<PoultryProductS
 export type OrderResponse = ApiResponse<Order>;
 export type OrderListResponse = PaginatedResponse<OrderSummary>;
 export type OrderDetailResponse = ApiResponse<OrderDetail>;
+export type OrderEventListResponse = PaginatedResponse<OrderEvent>;
 export type FulfilmentResponse = ApiResponse<Fulfilment>;
 export type FulfilmentListResponse = PaginatedResponse<Fulfilment>;
 export type FlockSaleDepletionResponse = ApiResponse<FlockSaleDepletion>;
