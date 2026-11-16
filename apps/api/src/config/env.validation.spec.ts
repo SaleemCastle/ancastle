@@ -37,6 +37,22 @@ describe('validateEnvironment', () => {
     expect(result.NODE_ENV).toBe('development');
     expect(result.API_PORT).toBe(4000);
     expect(result.LOG_LEVEL).toBe('info');
+    expect(result.SALES_FULFILMENT_ENABLED).toBe('false');
+  });
+
+  it('accepts only explicit server fulfilment activation values', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        SALES_FULFILMENT_ENABLED: 'true',
+      }).SALES_FULFILMENT_ENABLED,
+    ).toBe('true');
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        SALES_FULFILMENT_ENABLED: '1',
+      }),
+    ).toThrow(/SALES_FULFILMENT_ENABLED/);
   });
 
   it('rejects missing required configuration', () => {

@@ -11,6 +11,9 @@ export const rolePermissions: Record<
   [MembershipRole.OWNER]: Object.values(Permission),
 
   [MembershipRole.ADMIN]: [
+    Permission.FULFILMENT_READ,
+    Permission.FULFILMENT_POST,
+    Permission.FULFILMENT_REVERSE,
     Permission.SALES_PRODUCT_READ,
     Permission.SALES_PRODUCT_MANAGE,
     Permission.SALES_PRODUCT_SOURCE_MANAGE,
@@ -56,6 +59,8 @@ export const rolePermissions: Record<
   ],
 
   [MembershipRole.MANAGER]: [
+    Permission.FULFILMENT_READ,
+    Permission.FULFILMENT_POST,
     Permission.SALES_PRODUCT_READ,
     Permission.SALES_PRODUCT_MANAGE,
     Permission.SALES_PRODUCT_SOURCE_MANAGE,
@@ -91,6 +96,8 @@ export const rolePermissions: Record<
   ],
 
   [MembershipRole.STAFF]: [
+    Permission.FULFILMENT_READ,
+    Permission.FULFILMENT_POST,
     Permission.SALES_PRODUCT_READ,
     Permission.ORDER_READ,
     Permission.ORGANIZATION_READ,

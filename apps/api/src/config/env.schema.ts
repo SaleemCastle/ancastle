@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 export const envSchema = z.object({
+  // Release operators enable only after the M5 compatibility manifest is signed.
+  SALES_FULFILMENT_ENABLED: z.enum(['false', 'true']).default('false'),
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
     .default('development'),
