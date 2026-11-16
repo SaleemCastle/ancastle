@@ -77,8 +77,14 @@ jobs:
             - name: Apply database migrations
               run: pnpm --filter @ancastle/api db:migrate:deploy
 
-            - name: Test
-              run: pnpm test
+            - name: Test API
+              run: pnpm --filter @ancastle/api test -- --maxWorkers=2
+
+            - name: Test validation
+              run: pnpm --filter @ancastle/validation test
+
+            - name: Test web
+              run: pnpm --filter @ancastle/web test
 
             - name: Build
               run: pnpm build

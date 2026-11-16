@@ -2,6 +2,10 @@ export const Permission = {
   SALES_PRODUCT_READ: 'sales-product:read',
   SALES_PRODUCT_MANAGE: 'sales-product:manage',
   SALES_PRODUCT_SOURCE_MANAGE: 'sales-product-source:manage',
+  ORDER_READ: 'order:read',
+  ORDER_MANAGE: 'order:manage',
+  ORDER_CONFIRM: 'order:confirm',
+  ORDER_CANCEL: 'order:cancel',
   ORGANIZATION_READ: 'organization:read',
   ORGANIZATION_UPDATE: 'organization:update',
 

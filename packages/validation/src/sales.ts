@@ -12,6 +12,7 @@ import {
     type OrderLine,
     type Order,
     type OrderDetail,
+    type OrderEvent,
     type Fulfilment,
     type FlockSaleDepletion,
     type FulfilmentCommandReceipt,
@@ -492,6 +493,18 @@ export const orderDetailSchema = z.union([
     authorizedOrderDetailSchema,
 ]) satisfies z.ZodType<OrderDetail>;
 export const orderDetailResponseSchema = resource(orderDetailSchema);
+export const orderEventSchema = z
+    .object({
+        id,
+        action: z.enum(['CREATED', 'AMENDED', 'CONFIRMED', 'CANCELLED']),
+        orderVersion: version,
+        actorUserId: id,
+        reason: reason.nullable(),
+        commercialChanges: z.record(z.string(), z.unknown()),
+        createdAt: instant,
+    })
+    .strict() satisfies z.ZodType<OrderEvent>;
+export const orderEventListResponseSchema = collection(orderEventSchema);
 export const fulfilmentCommandReceiptSchema = z
     .object({
         operation: z.enum(['POST', 'REVERSE']),
@@ -517,6 +530,7 @@ export type AmendOrderInput = z.infer<typeof amendOrderSchema>;
 export type ConfirmOrderInput = z.infer<typeof confirmOrderSchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 export type OrderQuery = z.infer<typeof orderQuerySchema>;
+export type OrderEventQuery = z.infer<typeof paginationQuerySchema>;
 export type FulfilmentAllocationInput = z.infer<typeof fulfilmentAllocationInputSchema>;
 export type PostFulfilmentInput = z.infer<typeof postFulfilmentSchema>;
 export type ReverseFulfilmentInput = z.infer<typeof reverseFulfilmentSchema>;
