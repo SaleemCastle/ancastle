@@ -3,4 +3,5 @@ export interface ManagementActionState {
     fields?: Record<string, string[]>;
     success?: string;
     resourceId?: string;
+    outcomeUnknown?: boolean;
 }

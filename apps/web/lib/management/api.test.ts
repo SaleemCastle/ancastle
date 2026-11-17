@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { farmResponseSchema } from '@ancastle/validation';
+import { orderListResponseSchema } from '@ancastle/validation';
 import {
     fetchManagement,
     customerListResponseSchema,
@@ -46,29 +47,89 @@ describe('Management API transport', () => {
             headers: { Authorization: 'Bearer test-access' },
         });
     });
-    it.each(['FARM_CODE_EXISTS', 'FARM_NOT_FOUND', 'FORBIDDEN', 'VALIDATION_ERROR'])(
-        'maps %s to a fixed safe UI error without upstream messages or fields',
-        async (code) => {
-            const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-                new Response(
-                    JSON.stringify({
-                        error: {
-                            code,
-                            message: 'private upstream details',
-                            fields: { password: ['private'] },
-                        },
-                    }),
-                    { status: 400 },
-                ),
-            );
-            await expect(
-                fetchManagement('organizations/example', farmResponseSchema, 'test', {}, fetcher),
-            ).rejects.toMatchObject({
-                code,
-                message: expect.not.stringContaining('private'),
-            });
-        },
-    );
+    it.each([
+        'FARM_CODE_EXISTS',
+        'FARM_NOT_FOUND',
+        'FORBIDDEN',
+        'VALIDATION_ERROR',
+        'ORDER_NOT_FOUND',
+        'ORDER_STATE_CONFLICT',
+        'ORDER_VERSION_CONFLICT',
+    ])('maps %s to a fixed safe UI error without upstream messages or fields', async (code) => {
+        const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    error: {
+                        code,
+                        message: 'private upstream details',
+                        fields: { password: ['private'] },
+                    },
+                }),
+                { status: 400 },
+            ),
+        );
+        await expect(
+            fetchManagement('organizations/example', farmResponseSchema, 'test', {}, fetcher),
+        ).rejects.toMatchObject({
+            code,
+            message: expect.not.stringContaining('private'),
+        });
+    });
+
+    it('validates the shared order collection response and rejects source detail from the list API', async () => {
+        const order = {
+            id: '9f28c90f-5fe7-42ab-ae59-2af1bb25ee80',
+            code: 'ORD-000001',
+            customer: {
+                id: '448bf1da-fae2-4d63-98b7-891b4e379786',
+                code: 'CUS-000001',
+                name: 'Castle Produce',
+            },
+            commercialState: 'CONFIRMED',
+            fulfilmentProgress: null,
+            version: 2,
+            currency: 'JMD',
+            terms: { saleType: 'CASH', creditTermDays: null },
+            totalAmount: '15.43',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        };
+        const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    data: [order],
+                    meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
+                }),
+            ),
+        );
+        expect(
+            await fetchManagement(
+                'organizations/example/orders',
+                orderListResponseSchema,
+                'test',
+                {},
+                fetcher,
+            ),
+        ).toMatchObject({ data: [{ code: 'ORD-000001', totalAmount: '15.43' }] });
+
+        const leaking = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    data: [{ ...order, farmId: 'hidden' }],
+                    meta: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
+                }),
+            ),
+        );
+        await expect(
+            fetchManagement(
+                'organizations/example/orders',
+                orderListResponseSchema,
+                'test',
+                {},
+                leaking,
+            ),
+        ).rejects.toBeInstanceOf(AuthUnavailableError);
+    });
 
     it('validates Customer DTOs and strips unexpected response fields', async () => {
         const customer = {

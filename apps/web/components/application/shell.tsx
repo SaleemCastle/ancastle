@@ -10,6 +10,7 @@ import {
     Truck,
     PackageOpen,
     Bird,
+    ShoppingCart,
 } from 'lucide-react';
 import type { ApplicationOrganization } from '@ancastle/types';
 import { LogoutForm } from '@/components/logout-form';
@@ -237,6 +238,17 @@ export function ApplicationShell({
                             >
                                 <PackageOpen className="size-4" aria-hidden="true" />
                                 Sales catalog
+                            </Link>
+                        )}
+                        {current?.permissions.includes('order:read') && (
+                            <Link
+                                prefetch={false}
+                                aria-current={activePath === '/app/orders' ? 'page' : undefined}
+                                href={applicationHref('/app/orders', current.organization.id)}
+                                className={navigationClass('/app/orders')}
+                            >
+                                <ShoppingCart className="size-4" aria-hidden="true" />
+                                Sales orders
                             </Link>
                         )}
                         {current?.permissions.includes('customer:read') && (

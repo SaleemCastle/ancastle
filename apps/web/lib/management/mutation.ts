@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { resourceIdSchema } from '@ancastle/validation';
 import type { z } from 'zod';
 import { authConfig } from '../auth/config';
+import { AuthenticationRejectedError } from '../auth/errors';
 import { requireApplicationContext } from '../application/current-context';
 import { ApplicationAccessDeniedError } from '../application/selection';
 import { ManagementApiError } from './api';
@@ -53,6 +54,8 @@ export async function runOrganizationMutation(
         return result;
     } catch (error) {
         unstable_rethrow(error);
+        if (error instanceof AuthenticationRejectedError)
+            return { error: 'Your sign-in has expired. Sign in again before continuing.' };
         if (error instanceof FormValidationError)
             return { fields: error.fields, error: 'Check the form values and try again.' };
         if (error instanceof ManagementApiError) return { error: error.message };
