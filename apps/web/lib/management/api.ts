@@ -56,6 +56,16 @@ const messages: Record<string, string> = {
     FEED_USAGE_SCOPE_NOT_FOUND: 'The active flock or feed item is unavailable in this farm.',
     FEED_USAGE_INVALID_QUANTITY: 'Enter a positive quantity with at most three decimal places.',
     MORTALITY_INVALID_COUNT: 'Enter a positive whole number of deaths.',
+    ORDER_NOT_FOUND: 'This order is unavailable.',
+    ORDER_STATE_CONFLICT:
+        'This order can no longer be changed in its current state. Reload the order.',
+    ORDER_VERSION_CONFLICT:
+        'This order changed since you opened it. Reload and review the latest version.',
+    ORDER_HISTORY_INVALID: 'Order history could not be verified. Contact an administrator.',
+    ORDER_LINE_LIMIT_REACHED: 'This order has reached its line limit.',
+    CUSTOMER_INACTIVE: 'Choose an active customer before saving this draft.',
+    SALES_PRODUCT_INACTIVE:
+        'One or more selected products are no longer active. Reload the catalog and review this draft.',
 };
 export class ManagementApiError extends Error {
     constructor(readonly code: string) {
