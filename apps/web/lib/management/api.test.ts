@@ -55,6 +55,11 @@ describe('Management API transport', () => {
         'ORDER_NOT_FOUND',
         'ORDER_STATE_CONFLICT',
         'ORDER_VERSION_CONFLICT',
+        'FULFILMENT_DISABLED',
+        'FULFILMENT_SOURCE_UNAVAILABLE',
+        'INSUFFICIENT_FLOCK_POPULATION',
+        'ORDER_OVER_FULFILMENT',
+        'IDEMPOTENCY_CONFLICT',
     ])('maps %s to a fixed safe UI error without upstream messages or fields', async (code) => {
         const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
             new Response(
@@ -73,6 +78,26 @@ describe('Management API transport', () => {
         ).rejects.toMatchObject({
             code,
             message: expect.not.stringContaining('private'),
+        });
+    });
+
+    it('preserves command idempotency headers while forcing the server-managed access token', async () => {
+        const fetcher = vi
+            .fn<typeof fetch>()
+            .mockResolvedValue(new Response(JSON.stringify({ data: { ...data } })));
+        await fetchManagement(
+            'organizations/' + data.organizationId + '/farms/' + data.id,
+            farmResponseSchema,
+            'current-server-token',
+            {
+                method: 'POST',
+                headers: { 'Idempotency-Key': randomUUID(), Authorization: 'Bearer untrusted' },
+            },
+            fetcher,
+        );
+        expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({
+            'idempotency-key': expect.any(String),
+            Authorization: 'Bearer current-server-token',
         });
     });
 

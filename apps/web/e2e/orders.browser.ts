@@ -1,5 +1,9 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { createWebAuthFixture, closeWebAuthDatabase } from '../../api/test/web-auth-fixture.js';
+import {
+    createWebAuthFixture,
+    closeWebAuthDatabase,
+    webAuthPrisma,
+} from '../../api/test/web-auth-fixture.js';
 
 const apiOrigin = process.env.ANCASTLE_E2E_API_ORIGIN ?? 'http://127.0.0.1:4310';
 
@@ -27,8 +31,278 @@ async function organizationApi(
             expect(response.ok()).toBe(true);
             return (await response.json()).data;
         },
+        get: async (path: string) => request.get(`${base}/${path}`, { headers }),
+        rawPost: async (path: string, data: object, extraHeaders: Record<string, string> = {}) =>
+            request.post(`${base}/${path}`, { headers: { ...headers, ...extraHeaders }, data }),
+        rawPostAt: async (
+            organization: string,
+            path: string,
+            data: object,
+            extraHeaders: Record<string, string> = {},
+        ) =>
+            request.post(`${apiOrigin}/api/organizations/${organization}/${path}`, {
+                headers: { ...headers, ...extraHeaders },
+                data,
+            }),
     };
 }
+
+test('posts and reverses mixed partial fulfilment through authorized farm sources', async ({
+    page,
+    request,
+}) => {
+    test.setTimeout(90000);
+    const account = await createWebAuthFixture();
+    try {
+        const farm = await account.addFarm('Fulfilment Farm', 'FULFILLMENT');
+        const staffOrganization = await account.addOrganization('Staff farm scope', 'STAFF');
+        const foreignFarm = await account.addFarm('Unassigned Farm', 'UNASSIGNED', {
+            organizationId: staffOrganization,
+            assigned: false,
+        });
+        const customer = await account.addCustomer('Fulfilment buyer');
+        const api = await organizationApi(request, account);
+        const item = await api.post('inventory-items', {
+            name: 'Fulfilment pumpkin',
+            category: 'PRODUCE',
+            unit: 'KG',
+        });
+        const poultryProduct = await api.post('sales-products', {
+            name: 'Table birds',
+            kind: 'POULTRY',
+        });
+        const produceProduct = await api.post('sales-products', {
+            name: 'Sale pumpkin',
+            kind: 'PRODUCE',
+            inventoryItemId: item.id,
+            expectedInventoryUnit: 'KG',
+        });
+        const flock = await api.post(`farms/${farm.id}/flocks`, {
+            name: 'Sales flock',
+            birdType: 'Broiler',
+            placementDate: '2026-10-01',
+            startingBirdCount: 20,
+        });
+        await api.post(`farms/${farm.id}/sales-products/${poultryProduct.id}/poultry-sources`, {
+            flockId: flock.id,
+        });
+        await api.post(`farms/${farm.id}/inventory/movements`, {
+            inventoryItemId: item.id,
+            expectedInventoryUnit: 'KG',
+            quantity: 20,
+            reason: 'RECEIPT',
+            occurredAt: new Date().toISOString(),
+        });
+        const order = await api.post('orders', {
+            customerId: customer.id,
+            currency: 'JMD',
+            terms: { saleType: 'CASH', creditTermDays: null },
+            lines: [
+                {
+                    productId: poultryProduct.id,
+                    expectedProduct: { kind: 'POULTRY', unit: 'EACH' },
+                    quantity: '5',
+                    unitPrice: '3.0000',
+                },
+                {
+                    productId: produceProduct.id,
+                    expectedProduct: { kind: 'PRODUCE', unit: 'KG', inventoryItemId: item.id },
+                    quantity: '3.500',
+                    unitPrice: '2.0000',
+                },
+            ],
+        });
+        await api.post(`orders/${order.id}/confirm`, { expectedOrderVersion: order.version });
+        const base = `farms/${farm.id}`;
+        const stockBefore = await api.get(`${base}/inventory`);
+        expect(
+            (await stockBefore.json()).data.find(
+                (row: { item: { id: string } }) => row.item.id === item.id,
+            ).stockOnHand,
+        ).toBe('20');
+        await signIn(page, account);
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(
+            `/app/orders/${order.id}?organization=${account.organizationId}&farm=${farm.id}`,
+        );
+        const panel = page.getByRole('region', { name: 'Physical fulfilment' });
+        await expect(panel).toContainText('available 20 EACH');
+        await expect(panel).toContainText('available 20 KG');
+        await panel.getByLabel('Table birds source').selectOption(flock.id);
+        await panel.getByLabel('Table birds quantity').fill('1.5');
+        await panel.getByLabel('Sale pumpkin source').selectOption(item.id);
+        await panel.getByLabel('Sale pumpkin quantity').fill('1.250');
+        const proxyOrigin = process.env.ANCASTLE_E2E_PROXY_ORIGIN;
+        expect(proxyOrigin).toBeTruthy();
+        await panel.getByRole('button', { name: 'Post fulfilment' }).click();
+        await expect(panel.getByRole('alert')).toContainText('whole birds');
+        expect(await webAuthPrisma().fulfilment.count({ where: { orderId: order.id } })).toBe(0);
+        await panel.getByLabel('Table birds quantity').fill('2');
+        await request.post(`${proxyOrigin}/_fixture/mode`, { data: { fulfilmentValidation: 1 } });
+        await panel.getByRole('button', { name: 'Post fulfilment' }).click();
+        await expect(panel.getByRole('alert')).toContainText(
+            'allocations: The command quantity is no longer valid.',
+        );
+        expect(await webAuthPrisma().fulfilment.count({ where: { orderId: order.id } })).toBe(0);
+        await request.post(`${proxyOrigin}/_fixture/mode`, { data: { fulfilmentConflict: 1 } });
+        await panel.getByRole('button', { name: 'Post fulfilment' }).click();
+        await expect(panel.getByRole('alert')).toContainText('order changed since you opened it');
+        expect(await webAuthPrisma().fulfilment.count({ where: { orderId: order.id } })).toBe(0);
+        expect(
+            await webAuthPrisma().inventoryMovement.count({
+                where: {
+                    organizationId: account.organizationId,
+                    farmId: farm.id,
+                    inventoryItemId: item.id,
+                },
+            }),
+        ).toBe(1);
+        await request.post(`${proxyOrigin}/_fixture/mode`, { data: { fulfilmentResponseLoss: 1 } });
+        await panel.getByRole('button', { name: 'Post fulfilment' }).click();
+        await expect(panel.getByRole('alert')).toContainText('outcome is unknown');
+        const committedStock = await api.get(`${base}/inventory`);
+        expect(
+            (await committedStock.json()).data.find(
+                (row: { item: { id: string } }) => row.item.id === item.id,
+            ).stockOnHand,
+        ).toBe('18.75');
+        const committedFlock = await api.get(
+            `${base}/flocks/${flock.id}?ageAndMaturityAsOfDate=2026-11-19`,
+        );
+        expect((await committedFlock.json()).data.metrics.liveBirdCount).toBe(18);
+        const prisma = webAuthPrisma();
+        const committedBatch = await prisma.fulfilment.findFirstOrThrow({
+            where: { organizationId: account.organizationId, orderId: order.id, kind: 'POSTING' },
+            include: { lines: { include: { inventoryMovement: true, depletions: true } } },
+        });
+        const committedProduce = committedBatch.lines.find((line) => line.kind === 'PRODUCE');
+        const committedPoultry = committedBatch.lines.find((line) => line.kind === 'POULTRY');
+        expect(committedProduce?.quantity.toFixed(3)).toBe('1.250');
+        expect(committedProduce?.unit).toBe('KG');
+        expect(committedProduce?.inventoryMovement?.quantity.toFixed(3)).toBe('-1.250');
+        expect(committedProduce?.inventoryMovement?.reason).toBe('ISSUE');
+        expect(committedPoultry?.quantity.toFixed(3)).toBe('2.000');
+        expect(committedPoultry?.unit).toBe('EACH');
+        expect(committedPoultry?.depletions.reduce((sum, row) => sum + row.birdCount, 0)).toBe(2);
+        expect(
+            await prisma.fulfilment.count({
+                where: { organizationId: account.organizationId, orderId: order.id },
+            }),
+        ).toBe(1);
+        expect(
+            await prisma.fulfilmentCommand.count({
+                where: {
+                    organizationId: account.organizationId,
+                    orderId: order.id,
+                    operation: 'POST',
+                },
+            }),
+        ).toBe(1);
+        await panel.getByRole('button', { name: 'Retry exact command' }).click();
+        await expect(panel.getByRole('status')).toHaveText('Fulfilment posted.');
+        await expect(page.getByRole('region', { name: 'Order lines' })).toContainText('3 EACH');
+        await expect(page.getByRole('region', { name: 'Order lines' })).toContainText('2.25 KG');
+        await expect(panel).toContainText('FUL-');
+        const stock = await api.get(`${base}/inventory`);
+        expect(
+            (await stock.json()).data.find(
+                (row: { item: { id: string } }) => row.item.id === item.id,
+            ).stockOnHand,
+        ).toBe('18.75');
+        const flockRead = await api.get(
+            `${base}/flocks/${flock.id}?ageAndMaturityAsOfDate=2026-11-19`,
+        );
+        expect((await flockRead.json()).data.metrics.liveBirdCount).toBe(18);
+        const foreign = await api.rawPostAt(
+            staffOrganization,
+            `farms/${foreignFarm.id}/orders/${order.id}/fulfilments`,
+            {
+                expectedOrderVersion: 3,
+                occurredAt: new Date().toISOString(),
+                allocations: [
+                    {
+                        orderLineId: order.lines[0].id,
+                        kind: 'POULTRY',
+                        flockId: flock.id,
+                        quantity: '1',
+                    },
+                ],
+            },
+            { 'Idempotency-Key': crypto.randomUUID() },
+        );
+        expect(foreign.status()).toBe(403);
+        const handleDialog = async (dialog: import('@playwright/test').Dialog) =>
+            dialog.type() === 'prompt'
+                ? dialog.accept('Correction for a recorded posting error')
+                : dialog.accept();
+        page.on('dialog', handleDialog);
+        await panel.getByRole('button', { name: 'Reverse full batch' }).click();
+        page.off('dialog', handleDialog);
+        await expect(panel).toContainText('REVERSAL');
+        const restoredStock = await api.get(`${base}/inventory`);
+        expect(
+            (await restoredStock.json()).data.find(
+                (row: { item: { id: string } }) => row.item.id === item.id,
+            ).stockOnHand,
+        ).toBe('20');
+        const restoredFlock = await api.get(
+            `${base}/flocks/${flock.id}?ageAndMaturityAsOfDate=2026-11-19`,
+        );
+        expect((await restoredFlock.json()).data.metrics.liveBirdCount).toBe(20);
+        const persistedHistory = await prisma.fulfilment.findMany({
+            where: { organizationId: account.organizationId, orderId: order.id },
+            include: { lines: { include: { inventoryMovement: true, depletions: true } } },
+            orderBy: { createdAt: 'asc' },
+        });
+        expect(persistedHistory.map((event) => event.kind)).toEqual(['POSTING', 'REVERSAL']);
+        const reversalProduce = persistedHistory[1]?.lines.find((line) => line.kind === 'PRODUCE');
+        const reversalPoultry = persistedHistory[1]?.lines.find((line) => line.kind === 'POULTRY');
+        expect(reversalProduce?.quantity.toFixed(3)).toBe('1.250');
+        expect(reversalProduce?.inventoryMovement?.quantity.toFixed(3)).toBe('1.250');
+        expect(reversalProduce?.inventoryMovement?.reason).toBe('ADJUSTMENT');
+        expect(reversalPoultry?.depletions.reduce((sum, row) => sum + row.birdCount, 0)).toBe(2);
+        expect(persistedHistory[1]?.reversesFulfilmentId).toBe(committedBatch.id);
+        const movementLedger = await prisma.inventoryMovement.aggregate({
+            where: {
+                organizationId: account.organizationId,
+                farmId: farm.id,
+                inventoryItemId: item.id,
+            },
+            _sum: { quantity: true },
+        });
+        expect(movementLedger._sum.quantity?.toFixed(3)).toBe('20.000');
+        expect(
+            await prisma.fulfilmentCommand.count({
+                where: {
+                    organizationId: account.organizationId,
+                    orderId: order.id,
+                    operation: 'POST',
+                },
+            }),
+        ).toBe(1);
+        expect(
+            await prisma.fulfilmentCommand.count({
+                where: {
+                    organizationId: account.organizationId,
+                    orderId: order.id,
+                    operation: 'REVERSE',
+                },
+            }),
+        ).toBe(1);
+        await expect(page.getByRole('region', { name: 'Order lines' })).toContainText('0 EACH');
+        await expect(page.getByRole('region', { name: 'Order lines' })).toContainText('0 KG');
+        await page.goto(`/app/customers/${customer.id}?organization=${account.organizationId}`);
+        const purchaseHistory = page.getByRole('region', { name: 'Customer purchase history' });
+        await expect(purchaseHistory).toContainText('Net purchased 0 EACH');
+        await expect(purchaseHistory).toContainText('Net purchased 0 KG');
+        await expect(purchaseHistory).not.toContainText('Paid');
+        expect(
+            await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        ).toBe(true);
+    } finally {
+        await closeWebAuthDatabase();
+    }
+});
 
 test('creates, edits, confirms and reviews a mixed poultry/produce sales order', async ({
     page,

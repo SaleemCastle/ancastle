@@ -11,6 +11,16 @@ import { OrderActions } from '@/components/sales-orders/order-actions';
 import { ManagementApiError, managementApi } from '@/lib/management/api';
 import { applicationHref, type ApplicationSearch } from '@/lib/application/selection';
 import { formatJmdAmount } from '@/lib/management/order-form';
+import { FulfilmentPanel } from '@/components/sales-orders/fulfilment-panel';
+import {
+    salesProductListResponseSchema,
+    poultryProductSourceListResponseSchema,
+    fulfilmentListResponseSchema,
+    fulfilmentQuerySchema,
+} from '@ancastle/validation';
+import { farmInventoryResponseSchema } from '@/lib/management/api';
+import { flockApiPath, flockListResponseSchema } from '@/lib/management/flock-api';
+import { flockMetricsDate } from '@/lib/management/flocks';
 
 export const metadata: Metadata = { title: 'Sales order | Ancastle Farms' };
 
@@ -50,6 +60,129 @@ export default function SalesOrderDetailPage({
                 const { sourceDetails: _sourceDetails, ...order } = detail.data;
                 void _sourceDetails;
                 const lines = order.lines;
+                const selectedFarm = context.farm;
+                const farmChoices = current.farms;
+                const availableSources: Array<{
+                    id: string;
+                    lineId: string;
+                    label: string;
+                    available: string;
+                    unit: string;
+                }> = [];
+                let fulfilmentHistory: Array<{
+                    id: string;
+                    code: string;
+                    kind: 'POSTING' | 'REVERSAL';
+                    farmId: string;
+                    occurredAt: string;
+                    createdAt: string;
+                    actorUserId: string;
+                    note: string | null;
+                    reference: string | null;
+                    reversesFulfilmentId: string | null;
+                    reason?: string;
+                    postingErrorConfirmed?: true;
+                    lines: Array<{
+                        id: string;
+                        orderLineId: string;
+                        quantity: string;
+                        unit: string;
+                        sourceCode: string;
+                        reversesLineId: string | null;
+                    }>;
+                }> = [];
+                let fulfilmentHistoryPage = { page: 1, totalPages: 0 };
+                if (selectedFarm && current.permissions.includes('sales-product:read')) {
+                    const farmBase = `organizations/${current.organization.id}/farms/${selectedFarm.id}`;
+                    const canReadPoultry =
+                        current.permissions.includes('flock:read') &&
+                        current.permissions.includes('sales-product:read');
+                    const canReadProduce = current.permissions.includes('inventory:read');
+                    const historyQuery = fulfilmentQuerySchema.safeParse({
+                        page: search.fulfilmentPage,
+                        pageSize: 20,
+                        orderId: order.id,
+                    });
+                    if (!historyQuery.success) throw new ManagementApiError('VALIDATION_ERROR');
+                    const [products, stock, flocks, history] = await Promise.all([
+                        managementApi(
+                            `organizations/${current.organization.id}/sales-products?page=1&pageSize=100&isActive=true`,
+                            salesProductListResponseSchema,
+                        ),
+                        canReadProduce
+                            ? managementApi(`${farmBase}/inventory`, farmInventoryResponseSchema)
+                            : Promise.resolve(null),
+                        canReadPoultry
+                            ? managementApi(
+                                  `${flockApiPath({ organization: current.organization.id, farm: selectedFarm.id })}?page=1&pageSize=100&isActive=true&ageAndMaturityAsOfDate=${flockMetricsDate()}`,
+                                  flockListResponseSchema,
+                              )
+                            : Promise.resolve(null),
+                        current.permissions.includes('fulfilment:read')
+                            ? managementApi(
+                                  `${farmBase}/fulfilments?orderId=${order.id}&page=${historyQuery.data.page}&pageSize=${historyQuery.data.pageSize}`,
+                                  fulfilmentListResponseSchema,
+                              )
+                            : Promise.resolve(null),
+                    ]);
+                    fulfilmentHistory = history?.data ?? [];
+                    fulfilmentHistoryPage = {
+                        page: history?.meta.page ?? 1,
+                        totalPages: history?.meta.totalPages ?? 0,
+                    };
+                    const productById = new Map(
+                        products.data.map((product) => [product.id, product]),
+                    );
+                    for (const line of lines.filter(
+                        (entry) => !entry.isRemoved && Number(entry.remainingQuantity) > 0,
+                    )) {
+                        const product = productById.get(line.productId);
+                        if (!product || !product.isActive) continue;
+                        if (
+                            line.kind === 'PRODUCE' &&
+                            product.kind === 'PRODUCE' &&
+                            canReadProduce
+                        ) {
+                            const row = stock?.data.find(
+                                (entry) =>
+                                    entry.item.id === product.inventoryItemId &&
+                                    entry.item.isActive,
+                            );
+                            if (row)
+                                availableSources.push({
+                                    id: row.item.id,
+                                    lineId: line.id,
+                                    label: `${row.item.code} · ${row.item.name}`,
+                                    available: row.stockOnHand,
+                                    unit: row.item.unit,
+                                });
+                        } else if (
+                            line.kind === 'POULTRY' &&
+                            product.kind === 'POULTRY' &&
+                            flocks
+                        ) {
+                            const sources = await managementApi(
+                                `${farmBase}/sales-products/${product.id}/poultry-sources?page=1&pageSize=100&isActive=true`,
+                                poultryProductSourceListResponseSchema,
+                            );
+                            for (const source of sources?.data.filter(
+                                (entry) => entry.isEligible,
+                            ) ?? []) {
+                                const flock = flocks.data.find(
+                                    (entry) => entry.id === source.flockId,
+                                );
+                                if (flock)
+                                    availableSources.push({
+                                        id: flock.id,
+                                        lineId: line.id,
+                                        label: `${flock.code} · ${flock.name}`,
+                                        available: String(flock.metrics.liveBirdCount),
+                                        unit: 'EACH',
+                                    });
+                            }
+                        }
+                    }
+                }
                 const cancellable =
                     (order.commercialState === 'DRAFT' || order.commercialState === 'CONFIRMED') &&
                     order.fulfilmentProgress !== 'FULFILLED';
@@ -183,6 +316,65 @@ export default function SalesOrderDetailPage({
                             CASH and CREDIT describe commercial terms only. This order view does not
                             track payments, invoices, balances, or due dates.
                         </p>
+                        <section className="space-y-3" aria-label="Choose source farm">
+                            <h2 className="text-lg font-semibold">
+                                Fulfil from an authorized farm
+                            </h2>
+                            <form
+                                className="flex flex-wrap items-end gap-3"
+                                action={`/app/orders/${order.id}`}
+                            >
+                                <input
+                                    type="hidden"
+                                    name="organization"
+                                    value={current.organization.id}
+                                />
+                                <label className="min-w-52 space-y-1 text-sm">
+                                    Source farm
+                                    <select
+                                        name="farm"
+                                        defaultValue={selectedFarm?.id ?? ''}
+                                        className="h-11 w-full rounded-md border px-3"
+                                    >
+                                        <option value="">Select farm</option>
+                                        {farmChoices.map((farm) => (
+                                            <option key={farm.id} value={farm.id}>
+                                                {farm.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <button className="min-h-11 rounded-md border px-4" type="submit">
+                                    View source availability
+                                </button>
+                            </form>
+                        </section>
+                        <FulfilmentPanel
+                            organization={current.organization.id}
+                            orderId={order.id}
+                            orderVersion={order.version}
+                            farmId={selectedFarm?.id ?? null}
+                            farmName={selectedFarm?.name}
+                            canPost={
+                                order.commercialState === 'CONFIRMED' &&
+                                current.permissions.includes('fulfilment:post')
+                            }
+                            canReverse={current.permissions.includes('fulfilment:reverse')}
+                            lines={lines
+                                .filter((line) => !line.isRemoved)
+                                .map((line) => ({
+                                    id: line.id,
+                                    productName: line.productName,
+                                    kind: line.kind,
+                                    unit: line.unit,
+                                    remainingQuantity: line.remainingQuantity,
+                                }))}
+                            sources={availableSources}
+                            history={fulfilmentHistory}
+                            historyPage={fulfilmentHistoryPage.page}
+                            historyPages={fulfilmentHistoryPage.totalPages}
+                            historyHref={`/app/orders/${order.id}?organization=${current.organization.id}&farm=${selectedFarm?.id}`}
+                        />
                         <div className="flex flex-wrap gap-3">
                             {canEdit && (
                                 <Link

@@ -131,6 +131,9 @@ try {
             JWT_REFRESH_SECRET: 'browser-tests-refresh-secret-at-least-32-characters',
             JWT_ACCESS_TTL_SECONDS: '900',
             LOG_LEVEL: 'silent',
+            // This opt-in is accepted only by this runner, which always creates a disposable DB.
+            SALES_FULFILMENT_ENABLED:
+                process.env.ANCASTLE_E2E_SALES_FULFILMENT === '1' ? 'true' : 'false',
         },
     );
     servers.push(api);

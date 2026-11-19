@@ -4,4 +4,5 @@ export interface ManagementActionState {
     success?: string;
     resourceId?: string;
     outcomeUnknown?: boolean;
+    refresh?: boolean;
 }
