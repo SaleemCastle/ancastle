@@ -2,7 +2,15 @@
 import { createServer } from 'node:http';
 
 let counters = { login: 0, refresh: 0, logout: 0 };
-let mode = { unavailable: false, loginDelay: 0, contextUnavailable: false, contextDelay: 0 };
+let mode = {
+    unavailable: false,
+    loginDelay: 0,
+    contextUnavailable: false,
+    contextDelay: 0,
+    fulfilmentResponseLoss: 0,
+    fulfilmentConflict: 0,
+    fulfilmentValidation: 0,
+};
 let closing;
 
 const server = createServer(async (request, response) => {
@@ -24,6 +32,9 @@ const server = createServer(async (request, response) => {
                 loginDelay: 0,
                 contextUnavailable: false,
                 contextDelay: 0,
+                fulfilmentResponseLoss: 0,
+                fulfilmentConflict: 0,
+                fulfilmentValidation: 0,
             };
             response.end('ok');
             return;
@@ -66,6 +77,43 @@ const server = createServer(async (request, response) => {
         for await (const chunk of request) body += chunk;
         const headers = { 'Content-Type': 'application/json' };
         if (request.headers.authorization) headers.Authorization = request.headers.authorization;
+        if (request.headers['idempotency-key'])
+            headers['Idempotency-Key'] = request.headers['idempotency-key'];
+        if (
+            request.method === 'POST' &&
+            /\/orders\/[^/]+\/fulfilments$/.test(path) &&
+            mode.fulfilmentValidation > 0
+        ) {
+            mode.fulfilmentValidation--;
+            response.writeHead(422, { 'Content-Type': 'application/json' });
+            response.end(
+                JSON.stringify({
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Validation failed',
+                        fields: { allocations: ['The command quantity is no longer valid.'] },
+                    },
+                }),
+            );
+            return;
+        }
+        if (
+            request.method === 'POST' &&
+            /\/orders\/[^/]+\/fulfilments$/.test(path) &&
+            mode.fulfilmentConflict > 0
+        ) {
+            mode.fulfilmentConflict--;
+            response.writeHead(409, { 'Content-Type': 'application/json' });
+            response.end(
+                JSON.stringify({
+                    error: {
+                        code: 'ORDER_VERSION_CONFLICT',
+                        message: 'Order changed; reload and retry your edit',
+                    },
+                }),
+            );
+            return;
+        }
         const upstream = await fetch(
             (process.env.API_INTERNAL_TARGET ?? 'http://127.0.0.1:4310') + path,
             {
@@ -75,8 +123,18 @@ const server = createServer(async (request, response) => {
                 redirect: 'error',
             },
         );
+        const upstreamBody = upstream.status === 204 ? undefined : await upstream.text();
+        if (
+            request.method === 'POST' &&
+            /\/orders\/[^/]+\/fulfilments$|\/fulfilments\/[^/]+\/reverse$/.test(path) &&
+            mode.fulfilmentResponseLoss > 0
+        ) {
+            mode.fulfilmentResponseLoss--;
+            response.destroy();
+            return;
+        }
         response.writeHead(upstream.status, { 'Content-Type': 'application/json' });
-        response.end(upstream.status === 204 ? undefined : await upstream.text());
+        response.end(upstreamBody);
     } catch {
         response.writeHead(502);
         response.end('Fixture transport unavailable');

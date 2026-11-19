@@ -62,13 +62,33 @@ const messages: Record<string, string> = {
     ORDER_VERSION_CONFLICT:
         'This order changed since you opened it. Reload and review the latest version.',
     ORDER_HISTORY_INVALID: 'Order history could not be verified. Contact an administrator.',
+    FULFILMENT_DISABLED: 'Fulfilment posting is currently disabled by the server deployment.',
+    FULFILMENT_NOT_FOUND: 'This fulfilment is unavailable.',
+    FULFILMENT_SOURCE_UNAVAILABLE:
+        'The selected source is no longer eligible or available. Refresh the order and source data.',
+    FULFILMENT_DUPLICATE_SOURCE:
+        'Each order line and source can appear only once in a fulfilment command.',
+    FULFILMENT_QUANTITY_INVALID: 'Enter a valid quantity using the product unit.',
+    ORDER_OVER_FULFILMENT:
+        'The order changed or the quantity exceeds what remains. Refresh before posting.',
+    INSUFFICIENT_FLOCK_POPULATION:
+        'Live flock availability changed. Refresh source data and review the quantity.',
+    IDEMPOTENCY_CONFLICT:
+        'This command key is already attached to a different request. Reload before creating a new command.',
+    FULFILMENT_ALREADY_REVERSED:
+        'This posting has already been reversed. Refresh the order history.',
+    FULFILMENT_REVERSAL_INVALID: 'Only a complete original posting can be reversed.',
     ORDER_LINE_LIMIT_REACHED: 'This order has reached its line limit.',
     CUSTOMER_INACTIVE: 'Choose an active customer before saving this draft.',
     SALES_PRODUCT_INACTIVE:
         'One or more selected products are no longer active. Reload the catalog and review this draft.',
 };
 export class ManagementApiError extends Error {
-    constructor(readonly code: string) {
+    constructor(
+        readonly code: string,
+        readonly fields?: Record<string, string[]>,
+        readonly status?: number,
+    ) {
         super(messages[code] ?? 'This request could not be completed.');
     }
 }
@@ -207,6 +227,7 @@ export async function fetchManagement<T>(
             redirect: 'error',
             signal: AbortSignal.timeout(5000),
             headers: {
+                ...Object.fromEntries(new Headers(init.headers).entries()),
                 Authorization: 'Bearer ' + token,
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
@@ -232,8 +253,27 @@ export async function fetchManagement<T>(
             'code' in body.error
                 ? body.error.code
                 : undefined;
-        if (typeof code === 'string' && Object.hasOwn(messages, code))
-            throw new ManagementApiError(code);
+        if (typeof code === 'string' && Object.hasOwn(messages, code)) {
+            const errorFields =
+                typeof body === 'object' &&
+                body !== null &&
+                'error' in body &&
+                typeof body.error === 'object' &&
+                body.error !== null &&
+                'fields' in body.error &&
+                typeof body.error.fields === 'object' &&
+                body.error.fields !== null
+                    ? Object.fromEntries(
+                          Object.entries(body.error.fields).flatMap(([field, values]) =>
+                              Array.isArray(values) &&
+                              values.every((value) => typeof value === 'string')
+                                  ? [[field, values as string[]]]
+                                  : [],
+                          ),
+                      )
+                    : undefined;
+            throw new ManagementApiError(code, errorFields, response.status);
+        }
         throw new AuthUnavailableError();
     }
     const parsed = schema.safeParse(body);

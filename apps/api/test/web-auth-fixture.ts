@@ -16,6 +16,11 @@ function database() {
   return client;
 }
 
+/** Direct inspection is reserved for proving persisted browser-test effects. */
+export function webAuthPrisma(): PrismaClient {
+  return database();
+}
+
 export async function createWebAuthFixture(
   options: { role?: OrganizationRole } = {},
 ) {
