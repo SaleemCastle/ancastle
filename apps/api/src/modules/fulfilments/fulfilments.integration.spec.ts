@@ -1272,6 +1272,107 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
     expect((await balance()).toString()).toBe('4');
   });
 
+  it('serializes farm grant revocation against an in-flight fulfilment', async () => {
+    const o = await order('PRODUCE');
+    const hold = holdCommit();
+    const posting = writer(hold.client).post(
+      staff,
+      farmId,
+      o.id,
+      randomUUID(),
+      body(o, 'PRODUCE', '2'),
+    );
+    void posting.catch(() => {});
+    const pid = await Promise.race([
+      hold.acquired,
+      posting.then(() => {
+        throw new Error('Fulfilment did not pause before commit');
+      }),
+    ]);
+
+    const revocation = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id" FROM "organizations"
+        WHERE "id" = ${staff.organizationId}::uuid FOR UPDATE
+      `;
+      await tx.farmAccessAssignment.updateMany({
+        where: {
+          organizationId: staff.organizationId,
+          membershipId: staff.membershipId,
+          farmId,
+        },
+        data: { isActive: false },
+      });
+    });
+    void revocation.catch(() => {});
+    try {
+      await blockedBy(pid);
+    } finally {
+      hold.release();
+    }
+
+    await expect(posting).resolves.toMatchObject({ status: 201 });
+    await expect(revocation).resolves.toBeUndefined();
+    const nextOrder = await order('PRODUCE');
+    await expect(
+      writer(prisma).post(
+        staff,
+        farmId,
+        nextOrder.id,
+        randomUUID(),
+        body(nextOrder, 'PRODUCE', '1'),
+      ),
+    ).rejects.toThrow('permission');
+    expect(
+      await prisma.fulfilmentCommand.count({
+        where: { organizationId: staff.organizationId },
+      }),
+    ).toBe(1);
+  });
+
+  it.each(['SALE', 'ADJUSTMENT'] as const)(
+    'fulfilment versus outbound inventory adjustment with %s committing first',
+    async (first) => {
+      const o = await order('PRODUCE');
+      const adjustment = (client = prisma) =>
+        new InventoryStockService(client).postMovement(context, {
+          farmId,
+          inventoryItemId: itemId,
+          expectedInventoryUnit: 'KG',
+          quantity: new Prisma.Decimal(-7),
+          reason: 'ADJUSTMENT',
+          occurredAt: new Date(occurredAt),
+        });
+      const result =
+        first === 'SALE'
+          ? await overlapping(
+              (client) =>
+                writer(client).post(
+                  context,
+                  farmId,
+                  o.id,
+                  randomUUID(),
+                  body(o, 'PRODUCE', '7'),
+                ),
+              () => adjustment(),
+            )
+          : await overlapping(
+              (client) => adjustment(client),
+              () => post(o, body(o, 'PRODUCE', '7')),
+            );
+      expect(result.map((entry) => entry.status)).toEqual([
+        'fulfilled',
+        'rejected',
+      ]);
+      expect((await balance()).toString()).toBe('3');
+      expect(
+        await prisma.fulfilmentCommand.count({
+          where: { organizationId: context.organizationId },
+        }),
+      ).toBe(first === 'SALE' ? 1 : 0);
+    },
+  );
+
   it.each(['SALE', 'MORTALITY'] as const)(
     'fulfilment versus mortality with %s committing first',
     async (first) => {
