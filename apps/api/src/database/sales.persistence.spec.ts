@@ -220,6 +220,12 @@ datasource: {url: process.env.DATABASE_URL}});`,
     await tx.organizationMembership.create({
       data: { organizationId: org.id, userId: actor.id },
     });
+    const foreignActor = await tx.user.create({
+      data: { email: `${randomUUID()}@example.com`, passwordHash: 'unused' },
+    });
+    await tx.organizationMembership.create({
+      data: { organizationId: foreignOrg.id, userId: foreignActor.id },
+    });
     const farm = await tx.farm.create({
       data: { organizationId: org.id, code: 'NORTH', name: 'North' },
     });
@@ -284,11 +290,28 @@ datasource: {url: process.env.DATABASE_URL}});`,
         code: 'FLK-2',
       },
     });
+    const foreignFlock = await tx.flock.create({
+      data: {
+        ...flockData,
+        organizationId: foreignOrg.id,
+        farmId: foreignFarm.id,
+        code: 'FLK-1',
+      },
+    });
     const product = await tx.salesProduct.create({
       data: {
         organizationId: org.id,
         code: 'PRD-1',
         name: 'Birds',
+        kind: 'POULTRY',
+        unit: 'EACH',
+      },
+    });
+    const foreignProduct = await tx.salesProduct.create({
+      data: {
+        organizationId: foreignOrg.id,
+        code: 'PRD-FOREIGN',
+        name: 'Foreign birds',
         kind: 'POULTRY',
         unit: 'EACH',
       },
@@ -337,10 +360,36 @@ datasource: {url: process.env.DATABASE_URL}});`,
         unitPrice: '123.4567',
       },
     });
+    const foreignOrder = await tx.order.create({
+      data: {
+        organizationId: foreignOrg.id,
+        customerId: foreignCustomer.id,
+        code: 'ORD-1',
+        actorUserId: foreignActor.id,
+        customerCode: foreignCustomer.code,
+        customerName: foreignCustomer.name,
+        saleType: 'CASH',
+      },
+    });
+    const foreignLine = await tx.orderLine.create({
+      data: {
+        organizationId: foreignOrg.id,
+        orderId: foreignOrder.id,
+        lineNumber: 1,
+        productId: foreignProduct.id,
+        productCode: foreignProduct.code,
+        productName: foreignProduct.name,
+        kind: 'POULTRY',
+        unit: 'EACH',
+        orderedQuantity: '10',
+        unitPrice: '123.4567',
+      },
+    });
     return {
       org,
       foreignOrg,
       actor,
+      foreignActor,
       farm,
       otherFarm,
       foreignFarm,
@@ -350,11 +399,15 @@ datasource: {url: process.env.DATABASE_URL}});`,
       foreignItem,
       flock,
       otherFlock,
+      foreignFlock,
       product,
+      foreignProduct,
       produce,
       source,
       order,
       line,
+      foreignOrder,
+      foreignLine,
     };
   }
   type Fixture = Awaited<ReturnType<typeof seed>>;
@@ -1072,6 +1125,30 @@ datasource: {url: process.env.DATABASE_URL}});`,
         tx.customer.delete({ where: { id: f.customer.id } }),
       );
       await rejects(tx, () => tx.flock.delete({ where: { id: f.flock.id } }));
+    });
+  });
+
+  it('allows the same idempotency key in separate organizations', async () => {
+    await withFixture(async (tx, f) => {
+      const foreign: Fixture = {
+        ...f,
+        org: f.foreignOrg,
+        actor: f.foreignActor,
+        farm: f.foreignFarm,
+        customer: f.foreignCustomer,
+        flock: f.foreignFlock,
+        product: f.foreignProduct,
+        order: f.foreignOrder,
+        line: f.foreignLine,
+      };
+      await confirm(tx, f);
+      await confirm(tx, foreign);
+      const key = randomUUID();
+      const primary = await batch(tx, f, { key });
+      const other = await batch(tx, foreign, { key });
+      expect(primary.receipt!.organizationId).toBe(f.org.id);
+      expect(other.receipt!.organizationId).toBe(f.foreignOrg.id);
+      expect(await tx.fulfilmentCommand.count({ where: { key } })).toBe(2);
     });
   });
 
