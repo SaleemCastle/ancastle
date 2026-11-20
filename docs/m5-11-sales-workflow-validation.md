@@ -37,7 +37,7 @@ it does not mean cash was collected or a receivable was settled.
    Line quantity is the **commercial quantity requested**, not a stock write or
    physical handover. Draft edits do not reserve any source.
 4. **Snapshot commercial terms.** Initial currency is JMD. Unit prices are
-   nonnegative Decimal(19,4). Each line amount is quantity Ã— unit price rounded
+   nonnegative Decimal(19,4). Each line amount is quantity times unit price rounded
    half-up to two decimal places; order total is the sum of those rounded line
    amounts. Confirmation freezes customer/terms/product/quantity/price
    snapshots. The API is authoritative; a browser preview is informational.
@@ -121,9 +121,9 @@ back together. Errors propagate; the command receipt is inserted last and only a
 committed success is retained. A deferred commit-time constraint checks complete
 batch shape and linkage.
 
-The canonical application lock order is **organization parent â†’ scoped command
-identity â†’ order (if applicable) â†’ sorted definition rows â†’ sorted flock locks
-and rows â†’ sorted stock positions**. M3 movements and M4 mortality/feed use the
+The canonical application lock order is **organization parent -> scoped command
+identity -> order (if applicable) -> sorted definition rows -> sorted flock locks
+and rows -> sorted stock positions**. M3 movements and M4 mortality/feed use the
 shared lock protocol. Database constraints and application locks protect
 participating writers; unmanaged writers still require a deployment write
 barrier.
@@ -187,7 +187,7 @@ exit $code
 ```
 
 Latest run: **2 browser tests passed, exit 0**, zero owned servers remaining.
-The mixed fulfilment/reversal test exercised desktop and 390Ã—844 mobile views,
+The mixed fulfilment/reversal test exercised desktop and 390x844 mobile views,
 an assigned source and an unassigned-farm denial, 1.250 KG produce with exact
 ISSUE/ADJUSTMENT ledger values, whole-EACH poultry depletion/reversal, customer
 net purchase history, immutable batch history, and a simulated lost response
@@ -223,7 +223,8 @@ tasks succeeded. Existing Turbo warnings note that test tasks produce no cache
 output files; they did not fail the run. `pnpm format:check`, `pnpm lint`,
 `pnpm typecheck`, and `pnpm build` each exited 0. Build tasks were reported as
 Turbo cache hits; the recorded output includes the successful Next production
-route build. `git diff --check` must be rerun after this report is added.
+route build. `git diff --check` passed for the final documentation files before
+they were committed.
 
 ### Evidence matrix
 
@@ -240,20 +241,20 @@ route build. `git diff --check` must be rerun after this report is added.
 | Concurrent stock/flock conflicts and canonical lock order                      | Deterministic PostgreSQL lock-wait tests                                               | Direct for selected schedules; passed                                         |
 | Stale farm permission and revoked replay                                       | PostgreSQL integration transaction barriers                                            | Direct; passed                                                                |
 | Duplicate key, unknown post-commit response and safe replay                    | API receipt tests plus browser proxy fault injection                                   | Direct; passed                                                                |
-| Desktop/mobile browser behavior                                                | Real API browser flow; mobile viewport 390Ã—844                                        | Direct; passed                                                                |
+| Desktop/mobile browser behavior                                                | Real API browser flow; mobile viewport 390x844                                         | Direct; passed                                                                |
 | Hosted CI, staging compatibility, external writers, production backup/recovery | Not exercised by local test run                                                        | No direct evidence                                                            |
 
 ## Findings and limitations
 
-- **High operational blocker â€” production activation:** no production or staging
+- **High operational blocker - production activation:** no production or staging
   migration state, deployment build compatibility, signed M5-05 manifest,
   external-writer inventory/sign-offs, old-writer drain, write-pause evidence,
   or backup/recovery drill was supplied or observed. The runtime gate checks
   only an exact server environment flag; it does not prove those conditions.
-- **Medium operational limit â€” unmanaged writers:** application serialization
+- **Medium operational limit - unmanaged writers:** application serialization
   cannot protect raw SQL or legacy writers that bypass it. The deployment write
   barrier is mandatory during schema/contract cutover and activation.
-- **Medium scope limit â€” unknown order-create outcome:** order creation has no
+- **Medium scope limit - unknown order-create outcome:** order creation has no
   idempotency receipt. UI recovery directs the operator to inspect the list
   before retrying; this is distinct from the safe same-key fulfilment replay.
 - **M6 boundary:** invoices, payments, accounts receivable, credit balances,

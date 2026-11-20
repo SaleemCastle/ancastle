@@ -158,16 +158,16 @@ databases and Redis logical DB 15. The browser runner used unique test session
 prefixes and owned API/auth-proxy/Next processes; it reported
 `ownedServersRemaining=0`.
 
-| Check                                                                      | Exact result                                                                                           |    Exit |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------: |
-| Focused sales/fulfilment/catalog/persistence/M3/M4 PostgreSQL integrations | 7 files; 107 tests passed                                                                              |       0 |
-| Existing real-API sales browser workflows                                  | 2 passed; desktop and 390Ã—844 mobile behavior                                                         |       0 |
-| Sequential workspace tests                                                 | API 522/43 files; validation 180/8 files; web 138/17 files; 840 total                                  |       0 |
-| `pnpm format:check`                                                        | All matched files formatted                                                                            |       0 |
-| `pnpm lint`                                                                | API 0 warnings/errors; 2 tasks passed                                                                  |       0 |
-| `pnpm typecheck`                                                           | 4 workspace tasks passed                                                                               |       0 |
-| `pnpm build`                                                               | 4 workspace tasks reported successful; Turbo cache hits; Next production route build output successful |       0 |
-| `git diff --check`                                                         | Must run after both readiness reports are written                                                      | Pending |
+| Check                                                                      | Exact result                                                                                           | Exit |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---: |
+| Focused sales/fulfilment/catalog/persistence/M3/M4 PostgreSQL integrations | 7 files; 107 tests passed                                                                              |    0 |
+| Existing real-API sales browser workflows                                  | 2 passed; desktop and 390x844 mobile behavior                                                          |    0 |
+| Sequential workspace tests                                                 | API 522/43 files; validation 180/8 files; web 138/17 files; 840 total                                  |    0 |
+| `pnpm format:check`                                                        | All matched files formatted                                                                            |    0 |
+| `pnpm lint`                                                                | API 0 warnings/errors; 2 tasks passed                                                                  |    0 |
+| `pnpm typecheck`                                                           | 4 workspace tasks passed                                                                               |    0 |
+| `pnpm build`                                                               | 4 workspace tasks reported successful; Turbo cache hits; Next production route build output successful |    0 |
+| `git diff --check`                                                         | Passed for both final documentation files                                                              |    0 |
 
 Local test evidence directly covers authorized poultry and produce workflows,
 CASH/CREDIT intent and JMD snapshots, partial quantities, exact Decimal produce,
@@ -184,18 +184,19 @@ logging, not evidence of a leaked runtime credential.
 
 ## Severity findings
 
-- **High â€” production release blocker:** environment-specific manifest,
+- **High - production release blocker:** environment-specific manifest,
   production/staging migration and build state, external writer inventory and
   sign-offs, old-writer drain/write barrier, backup/restore evidence, and
   activation approvals have no direct evidence here.
-- **Medium â€” deployment protocol dependency:** the server gate is a simple
+- **Medium - deployment protocol dependency:** the server gate is a simple
   exact-value check. Operational correctness depends on the release process
   verifying all M5-05 prerequisites before setting it.
-- **Medium â€” unmanaged writer risk:** raw SQL/legacy writers outside the common
+- **Medium - unmanaged writer risk:** raw SQL/legacy writers outside the common
   lock protocol are not serialized by application locks; identify, stop or
   upgrade them and enforce the barrier.
-- **Low â€” hosted checks outstanding:** hosted CI/security checks on a PR head
-  were not run; they must pass before merge under the repository workflow.
+- **Low - hosted checks outstanding:** check the current PR's GitHub Actions
+  quality result and applicable security/branch-protection requirements before
+  merge; they are independent of the local evidence recorded here.
 - **No open local functional finding:** the required local tests and quality
   gates passed for the code under review; this assessment does not certify
   hosted or deployed environments.
@@ -213,8 +214,8 @@ not substitutes for those ledgers. M5-11 does not start M6 work.
 
 **Recommendation: CONDITIONAL for PR review; not ready to merge until review and
 hosted CI/security checks pass. Production depletion activation remains NOT
-READY.** This work stops before commit or push as instructed. Trello remains in
-its existing In Progress state; this report does not mark the card Done.
+READY.** The documentation is committed and this PR is open for review. It is
+not merged, and Trello remains in its existing In Progress state.
 
 ## References
 
