@@ -29,6 +29,8 @@ import { CustomersModule } from '../customers/customers.module.js';
 import { FulfilmentActivationService } from './fulfilment-activation.service.js';
 import { FulfilmentsModule } from './fulfilments.module.js';
 import { FulfilmentsService } from './fulfilments.service.js';
+import { InvoicesModule } from '../invoices/invoices.module.js';
+import { InvoicesService } from '../invoices/invoices.service.js';
 
 function barrier<T = void>() {
   let resolve!: (value: T) => void;
@@ -43,7 +45,9 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
   let prisma: PrismaService, app: INestApplication;
   let service: FulfilmentsService,
     orders: SalesOrdersService,
-    stock: InventoryStockService;
+    stock: InventoryStockService,
+    invoices: InvoicesService;
+  let invoiceAuthorization: AuthorizationService;
   let farms: FarmAccessService;
   const authorization = new AuthorizationService();
   const activation = new FulfilmentActivationService();
@@ -180,6 +184,141 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
     key = randomUUID(),
     farm = farmId,
   ) => service.post(context, farm, order.id, key, input);
+  async function insertInvoiceDirectly(
+    fulfilmentId: string,
+    options: {
+      customerId?: string;
+      currency?: string;
+      grossAmount?: string;
+      lineAmount?: string;
+      issuanceEvents?: 'one' | 'none' | 'duplicate';
+      lockSourceOrder?: boolean;
+      holdBeforeCommit?: { reached: () => void; wait: Promise<void> };
+    } = {},
+  ) {
+    const source = await prisma.fulfilment.findFirstOrThrow({
+      where: { organizationId: context.organizationId, id: fulfilmentId },
+      include: {
+        order: true,
+        lines: { include: { orderLine: true }, orderBy: { id: 'asc' } },
+      },
+    });
+    const invoiceId = randomUUID();
+    const issueKey = randomUUID();
+    const issuedAt = new Date();
+    const values = source.lines.map((line) => ({
+      line,
+      amount: new Prisma.Decimal(line.quantity)
+        .mul(line.orderLine.unitPrice)
+        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
+    }));
+    const grossAmount = values.reduce(
+      (total, value) => total.plus(value.amount),
+      new Prisma.Decimal(0),
+    );
+    return prisma.$transaction(async (tx) => {
+      if (options.lockSourceOrder)
+        await tx.$queryRaw`
+          SELECT "id" FROM "orders"
+          WHERE "organizationId" = ${context.organizationId}::uuid
+            AND "id" = ${source.orderId}::uuid
+          FOR UPDATE
+        `;
+      await tx.invoice.create({
+        data: {
+          id: invoiceId,
+          organizationId: context.organizationId,
+          farmId: source.farmId,
+          customerId: options.customerId ?? source.order.customerId,
+          orderId: source.orderId,
+          fulfilmentId,
+          invoiceNumber: `DIRECT-${invoiceId}`,
+          currency: options.currency ?? source.order.currency,
+          issuedAt,
+          dueAt: issuedAt,
+          customerBillingSnapshot: { name: source.order.customerName },
+          paymentTermsSnapshot: {
+            saleType: source.order.saleType,
+            creditTermDays: source.order.creditTermDays,
+          },
+          grossAmount: options.grossAmount ?? grossAmount,
+          taxTreatmentStatus: 'APPROVED_POLICY_NOT_CALCULATED',
+          taxPolicyReference: 'test-approved-policy',
+          taxPolicyVersion: 'test-1',
+          issuedByMembershipId: context.membershipId,
+          status: 'ISSUED',
+        },
+      });
+      await tx.invoiceLine.createMany({
+        data: values.map(({ line, amount }) => ({
+          organizationId: context.organizationId,
+          farmId: source.farmId,
+          orderId: source.orderId,
+          invoiceId,
+          orderLineId: line.orderLineId,
+          fulfilmentLineId: line.id,
+          description: line.orderLine.productName,
+          quantity: line.quantity,
+          unit: line.unit,
+          unitPrice: line.orderLine.unitPrice,
+          lineAmount: options.lineAmount ?? amount,
+        })),
+      });
+      await tx.invoiceFulfilmentAllocation.createMany({
+        data: source.lines.map((line) => ({
+          organizationId: context.organizationId,
+          farmId: source.farmId,
+          orderId: source.orderId,
+          orderLineId: line.orderLineId,
+          fulfilmentLineId: line.id,
+          invoiceId,
+        })),
+      });
+      if (options.issuanceEvents !== 'none') {
+        const event = {
+          organizationId: context.organizationId,
+          invoiceId,
+          actorMembershipId: context.membershipId,
+          type: 'ISSUED',
+          details: { source: 'DIRECT_TEST' },
+        };
+        await tx.invoiceLifecycleEvent.create({ data: event });
+        if (options.issuanceEvents === 'duplicate')
+          await tx.invoiceLifecycleEvent.create({ data: event });
+      }
+      await tx.invoiceIssueCommand.create({
+        data: {
+          organizationId: context.organizationId,
+          key: issueKey,
+          fulfilmentId,
+          actorMembershipId: context.membershipId,
+          requestHash: 'a'.repeat(64),
+          invoiceId,
+        },
+      });
+      if (options.holdBeforeCommit) {
+        options.holdBeforeCommit.reached();
+        await options.holdBeforeCommit.wait;
+      }
+      return invoiceId;
+    });
+  }
+  async function waitForDatabaseLockWait() {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const rows = await prisma.$queryRaw<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND wait_event_type = 'Lock'
+          AND pid <> pg_backend_pid()
+      `;
+      if ((rows[0]?.waiting ?? 0) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(
+      'Expected a concurrent transaction to wait on a database lock',
+    );
+  }
   async function counts() {
     const where = { organizationId: context.organizationId };
     return {
@@ -211,6 +350,7 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
         SalesOrdersModule,
         FulfilmentsModule,
         CustomersModule,
+        InvoicesModule,
       ],
     })
       .overrideProvider(PrismaService)
@@ -224,6 +364,8 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
     orders = module.get(SalesOrdersService);
     stock = module.get(InventoryStockService);
     farms = module.get(FarmAccessService);
+    invoices = module.get(InvoicesService);
+    invoiceAuthorization = module.get(AuthorizationService);
   }, 120_000);
   afterAll(async () => {
     await app?.close();
@@ -232,6 +374,9 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
   });
   beforeEach(async () => {
     vi.stubEnv('SALES_FULFILMENT_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'false');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'false');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_CONFIG', '{"state":"PENDING_POLICY"}');
     const org = await prisma.organization.create({
       data: { name: 'Sales', slug: randomUUID() },
     });
@@ -389,8 +534,12 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
         receipts: 1,
         lines: kind === 'MIXED' ? 2 : 1,
       });
-      // This schema has no invoice/payment models and posting adds no commercial event.
-      expect(Object.keys(prisma)).not.toContain('invoice');
+      // M5 physical posting does not create a financial invoice.
+      expect(
+        await prisma.invoice.count({
+          where: { organizationId: context.organizationId },
+        }),
+      ).toBe(0);
       expect(Object.keys(prisma)).not.toContain('payment');
     },
   );
@@ -1894,7 +2043,11 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
       ])
         expect(entry).not.toHaveProperty(forbidden);
     }
-    expect(Object.keys(prisma)).not.toContain('invoice');
+    expect(
+      await prisma.invoice.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
     expect(Object.keys(prisma)).not.toContain('payment');
   });
 
@@ -2017,5 +2170,742 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
       expect(serialized).not.toContain(sourceId);
     expect(entry).not.toHaveProperty('sourceDetails');
     expect(entry.lines[0]).not.toHaveProperty('allocations');
+  });
+
+  it('commits M5 fulfilment with invoice issuance disabled or unavailable', async () => {
+    const o = await order('PRODUCE', '4');
+    const issueSpy = vi
+      .spyOn(invoices, 'issue')
+      .mockRejectedValue(new Error('invoice service unavailable'));
+    const posted = await post(o, body(o, 'PRODUCE', '2'));
+    expect(issueSpy).not.toHaveBeenCalled();
+    expect(
+      await prisma.fulfilmentCommand.count({
+        where: {
+          organizationId: context.organizationId,
+          fulfilmentId: posted.receipt.fulfilment.id,
+        },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.invoice.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+    issueSpy.mockRestore();
+  });
+
+  it('persists maximum supported M5 line and 100-line invoice amounts at full precision', async () => {
+    const maxQuantity = '999999999999999.999';
+    const maxUnitPrice = '999999999999999.9999';
+    const maxLineAmount = '999999999999999998900000000000.00';
+    const maxGrossAmount = '99999999999999999890000000000000.00';
+    const draft = await orders.create(context, {
+      customerId,
+      currency: 'JMD',
+      terms: { saleType: 'CASH', creditTermDays: null },
+      lines: Array.from({ length: 100 }, () => ({
+        productId: produceId,
+        expectedProduct: {
+          kind: 'PRODUCE' as const,
+          unit: 'KG' as const,
+          inventoryItemId: itemId,
+        },
+        quantity: maxQuantity,
+        unitPrice: maxUnitPrice,
+      })),
+    });
+    const confirmed = await orders.confirm(context, draft.id, {
+      expectedOrderVersion: draft.version,
+    });
+    await prisma.inventoryMovement.createMany({
+      data: confirmed.lines.map(() => ({
+        organizationId: context.organizationId,
+        farmId,
+        inventoryItemId: itemId,
+        actorUserId: context.userId,
+        quantity: maxQuantity,
+        reason: 'RECEIPT' as const,
+        occurredAt: new Date(occurredAt),
+      })),
+    });
+    const posted = await service.post(
+      context,
+      farmId,
+      confirmed.id,
+      randomUUID(),
+      {
+        expectedOrderVersion: confirmed.version,
+        occurredAt,
+        allocations: confirmed.lines.map((line) => ({
+          kind: 'PRODUCE' as const,
+          orderLineId: line.id,
+          inventoryItemId: itemId,
+          quantity: maxQuantity,
+        })),
+      },
+    );
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"test-approved-policy","version":"test-1"}',
+    );
+    const issued = await invoices.issue(
+      context,
+      posted.receipt.fulfilment.id,
+      randomUUID(),
+    );
+    expect(issued.invoice.lines).toHaveLength(100);
+    expect(
+      issued.invoice.lines.every((line) => line.lineAmount === maxLineAmount),
+    ).toBe(true);
+    expect(issued.invoice.grossAmount).toBe(maxGrossAmount);
+    const stored = await prisma.invoice.findFirstOrThrow({
+      where: { organizationId: context.organizationId, id: issued.invoice.id },
+      include: { lines: true },
+    });
+    expect(stored.grossAmount.toFixed(2)).toBe(maxGrossAmount);
+    expect(
+      stored.lines.every(
+        (line) => line.lineAmount.toFixed(2) === maxLineAmount,
+      ),
+    ).toBe(true);
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "invoices"
+        SET "grossAmount" = '199999999999999998900000000000000.00'
+        WHERE "id" = ${stored.id}::uuid`,
+    ).rejects.toThrow();
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "invoice_lines"
+        SET "lineAmount" = '1999999999999999989000000000000.00'
+        WHERE "id" = ${stored.lines[0]!.id}::uuid`,
+    ).rejects.toThrow();
+  });
+
+  it('fails closed on unresolved tax policy without invalidating the committed fulfilment', async () => {
+    const o = await order('PRODUCE', '3');
+    const posted = await post(o, body(o, 'PRODUCE', '2'));
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_CONFIG', '{"state":"PENDING_POLICY"}');
+    await expect(
+      invoices.issue(context, posted.receipt.fulfilment.id, randomUUID()),
+    ).rejects.toMatchObject({ code: 'INVOICE_TAX_POLICY_PENDING' });
+    expect(
+      await prisma.fulfilment.findFirst({
+        where: {
+          id: posted.receipt.fulfilment.id,
+          organizationId: context.organizationId,
+        },
+      }),
+    ).not.toBeNull();
+    expect(
+      await prisma.invoice.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.invoiceSequence.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+  });
+
+  it('rolls back invoice, sequence, lines, allocations, event, and receipt after a mid-write failure', async () => {
+    const o = await order('PRODUCE', '4');
+    const posted = await post(o, body(o, 'PRODUCE', '2'));
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"rollback-test","version":"1"}',
+    );
+    await prisma.$executeRawUnsafe(`
+      CREATE FUNCTION fail_invoice_line_for_test() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected invoice line failure'; END; $$
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER fail_invoice_line_for_test
+      BEFORE INSERT ON invoice_lines
+      FOR EACH ROW EXECUTE FUNCTION fail_invoice_line_for_test()
+    `);
+    try {
+      await expect(
+        invoices.issue(context, posted.receipt.fulfilment.id, randomUUID()),
+      ).rejects.toThrow(/injected invoice line failure/i);
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'DROP TRIGGER IF EXISTS fail_invoice_line_for_test ON invoice_lines',
+      );
+      await prisma.$executeRawUnsafe(
+        'DROP FUNCTION IF EXISTS fail_invoice_line_for_test()',
+      );
+    }
+    expect(
+      await prisma.invoice.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.invoiceSequence.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.invoiceLine.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.invoiceFulfilmentAllocation.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.invoiceLifecycleEvent.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.invoiceIssueCommand.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.fulfilment.findFirst({
+        where: {
+          organizationId: context.organizationId,
+          id: posted.receipt.fulfilment.id,
+        },
+      }),
+    ).not.toBeNull();
+  });
+
+  it('issues separately against committed fulfilment, replays idempotently, and projects source snapshots', async () => {
+    const o = await order('PRODUCE', '4');
+    const posted = await post(o, body(o, 'PRODUCE', '2.375'));
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"business-approval","version":"2026-01"}',
+    );
+    const key = randomUUID();
+    const first = await invoices.issue(
+      context,
+      posted.receipt.fulfilment.id,
+      key,
+    );
+    const replay = await invoices.issue(
+      context,
+      posted.receipt.fulfilment.id,
+      key,
+    );
+    expect(first.status).toBe(201);
+    expect(replay.status).toBe(200);
+    expect(replay.invoice.id).toBe(first.invoice.id);
+    expect(first.invoice.lines).toHaveLength(1);
+    expect(first.invoice.lines[0]).toMatchObject({
+      quantity: '2.375',
+      unitPrice: '2.0000',
+      lineAmount: '4.75',
+    });
+    expect(first.invoice.grossAmount).toBe('4.75');
+    expect(first.invoice.paymentTermsSnapshot).toEqual({
+      saleType: 'CASH',
+      creditTermDays: null,
+    });
+    expect(first.invoice.taxTreatmentStatus).toBe(
+      'APPROVED_POLICY_NOT_CALCULATED',
+    );
+    await expect(
+      invoices.issue(context, posted.receipt.fulfilment.id, randomUUID()),
+    ).rejects.toMatchObject({ code: 'FULFILMENT_ALREADY_INVOICED' });
+    await expect(
+      service.reverse(
+        context,
+        farmId,
+        posted.receipt.fulfilment.id,
+        randomUUID(),
+        reversal(posted.receipt.orderVersion),
+      ),
+    ).rejects.toMatchObject({ code: 'INVOICED_FULFILMENT_REVERSAL_BLOCKED' });
+  });
+
+  it('rejects direct invoices for reversed sources and enforces event and source consistency', async () => {
+    const reversedOrder = await order('PRODUCE', '4');
+    const reversedPosting = await post(
+      reversedOrder,
+      body(reversedOrder, 'PRODUCE', '2'),
+    );
+    await service.reverse(
+      context,
+      farmId,
+      reversedPosting.receipt.fulfilment.id,
+      randomUUID(),
+      reversal(reversedPosting.receipt.orderVersion),
+    );
+    await expect(
+      insertInvoiceDirectly(reversedPosting.receipt.fulfilment.id),
+    ).rejects.toThrow(/reconcile|reversed/i);
+
+    const sourceOrder = await order('PRODUCE', '4');
+    const posting = await post(sourceOrder, body(sourceOrder, 'PRODUCE', '2'));
+    await expect(
+      insertInvoiceDirectly(posting.receipt.fulfilment.id, {
+        issuanceEvents: 'none',
+      }),
+    ).rejects.toThrow(/reconcile|issuance event/i);
+    await expect(
+      insertInvoiceDirectly(posting.receipt.fulfilment.id, {
+        issuanceEvents: 'duplicate',
+      }),
+    ).rejects.toThrow();
+
+    const secondCustomer = await prisma.customer.create({
+      data: {
+        organizationId: context.organizationId,
+        code: `CUS-${randomUUID()}`,
+        type: 'BUSINESS',
+        name: 'Different billed customer',
+      },
+    });
+    await expect(
+      insertInvoiceDirectly(posting.receipt.fulfilment.id, {
+        customerId: secondCustomer.id,
+      }),
+    ).rejects.toThrow(/reconcile|source/i);
+    await expect(
+      insertInvoiceDirectly(posting.receipt.fulfilment.id, {
+        currency: 'USD',
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('serializes issuance against reversal in both transaction directions', async () => {
+    const o = await order('PRODUCE', '4');
+    const posted = await post(o, body(o, 'PRODUCE', '2'));
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"concurrency-test","version":"1"}',
+    );
+    const outcomes = await Promise.allSettled([
+      invoices.issue(context, posted.receipt.fulfilment.id, randomUUID()),
+      service.reverse(
+        context,
+        farmId,
+        posted.receipt.fulfilment.id,
+        randomUUID(),
+        reversal(posted.receipt.orderVersion),
+      ),
+    ]);
+    expect(
+      outcomes.filter((outcome) => outcome.status === 'fulfilled'),
+    ).toHaveLength(1);
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        organizationId: context.organizationId,
+        fulfilmentId: posted.receipt.fulfilment.id,
+      },
+    });
+    const reversed = await prisma.fulfilment.findFirst({
+      where: {
+        organizationId: context.organizationId,
+        reversesFulfilmentId: posted.receipt.fulfilment.id,
+      },
+    });
+    expect(Boolean(invoice)).not.toBe(Boolean(reversed));
+  });
+
+  it('serializes direct invoice writes with M5 reversal whichever transaction holds the order first', async () => {
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"direct-race-test","version":"1"}',
+    );
+
+    const invoiceFirstOrder = await order('PRODUCE', '4');
+    const invoiceFirstPosting = await post(
+      invoiceFirstOrder,
+      body(invoiceFirstOrder, 'PRODUCE', '2'),
+    );
+    const directReached = barrier();
+    const releaseDirect = barrier();
+    const directInvoice = insertInvoiceDirectly(
+      invoiceFirstPosting.receipt.fulfilment.id,
+      {
+        lockSourceOrder: true,
+        holdBeforeCommit: {
+          reached: () => directReached.resolve(),
+          wait: releaseDirect.promise,
+        },
+      },
+    );
+    await directReached.promise;
+    const waitingReversal = service.reverse(
+      context,
+      farmId,
+      invoiceFirstPosting.receipt.fulfilment.id,
+      randomUUID(),
+      reversal(invoiceFirstPosting.receipt.orderVersion),
+    );
+    try {
+      await waitForDatabaseLockWait();
+    } finally {
+      releaseDirect.resolve();
+    }
+    await directInvoice;
+    await expect(waitingReversal).rejects.toMatchObject({
+      code: 'INVOICED_FULFILMENT_REVERSAL_BLOCKED',
+    });
+
+    const reversalFirstOrder = await order('PRODUCE', '4');
+    const reversalFirstPosting = await post(
+      reversalFirstOrder,
+      body(reversalFirstOrder, 'PRODUCE', '2'),
+    );
+    const reversalEntered = barrier();
+    const continueReversal = barrier();
+    const postMovement = stock.postMovementInTransaction.bind(stock);
+    const movementBarrier = vi
+      .spyOn(stock, 'postMovementInTransaction')
+      .mockImplementation(async (...args) => {
+        reversalEntered.resolve();
+        await continueReversal.promise;
+        return postMovement(...args);
+      });
+    try {
+      const winningReversal = service.reverse(
+        context,
+        farmId,
+        reversalFirstPosting.receipt.fulfilment.id,
+        randomUUID(),
+        reversal(reversalFirstPosting.receipt.orderVersion),
+      );
+      await reversalEntered.promise;
+      const losingInvoice = insertInvoiceDirectly(
+        reversalFirstPosting.receipt.fulfilment.id,
+      );
+      await waitForDatabaseLockWait();
+      continueReversal.resolve();
+      await winningReversal;
+      await expect(losingInvoice).rejects.toThrow(/reconcile|reversed/i);
+    } finally {
+      continueReversal.resolve();
+      movementBarrier.mockRestore();
+    }
+  });
+
+  it('serializes concurrent issue attempts and supports partial invoices from separate postings', async () => {
+    const o = await order('PRODUCE', '10');
+    const firstPosted = await post(o, body(o, 'PRODUCE', '3.75'));
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"business-approval","version":"2026-01"}',
+    );
+    const sameKey = randomUUID();
+    const replayed = await Promise.all([
+      invoices.issue(context, firstPosted.receipt.fulfilment.id, sameKey),
+      invoices.issue(context, firstPosted.receipt.fulfilment.id, sameKey),
+    ]);
+    expect(
+      replayed
+        .map((result) => result.invoice.id)
+        .filter((id, index, all) => all.indexOf(id) === index),
+    ).toHaveLength(1);
+    expect(
+      await prisma.invoice.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(1);
+
+    const nextOrder = { ...o, version: firstPosted.receipt.orderVersion };
+    const secondPosted = await post(
+      nextOrder,
+      body(nextOrder, 'PRODUCE', '6.25'),
+    );
+    await expect(
+      invoices.issue(context, secondPosted.receipt.fulfilment.id, sameKey),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+    const distinctKeys = await Promise.allSettled([
+      invoices.issue(context, secondPosted.receipt.fulfilment.id, randomUUID()),
+      invoices.issue(context, secondPosted.receipt.fulfilment.id, randomUUID()),
+    ]);
+    expect(
+      distinctKeys.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      distinctKeys.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(1);
+    const secondInvoice = distinctKeys.find(
+      (
+        result,
+      ): result is PromiseFulfilledResult<
+        Awaited<ReturnType<typeof invoices.issue>>
+      > => result.status === 'fulfilled',
+    )!.value;
+    expect(secondInvoice.invoice.lines[0]?.quantity).toBe('6.25');
+    const invoiceTotal = await prisma.invoice.aggregate({
+      where: { organizationId: context.organizationId, orderId: o.id },
+      _sum: { grossAmount: true },
+    });
+    expect(invoiceTotal._sum.grossAmount?.toFixed(2)).toBe('20.00');
+  });
+
+  it('rejects cross-organization invoice access and keeps STAFF read-only', async () => {
+    const o = await order('PRODUCE', '2');
+    const posted = await post(o, body(o, 'PRODUCE', '1'));
+    const nextOrder = { ...o, version: posted.receipt.orderVersion };
+    const unassignedFarmPosting = await post(
+      nextOrder,
+      body(nextOrder, 'PRODUCE', '1'),
+      randomUUID(),
+      secondFarm,
+    );
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"business-approval","version":"2026-01"}',
+    );
+    await expect(
+      invoices.issue(staff, posted.receipt.fulfilment.id, randomUUID()),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const issued = await invoices.issue(
+      context,
+      posted.receipt.fulfilment.id,
+      randomUUID(),
+    );
+    const unassignedFarmInvoice = await invoices.issue(
+      context,
+      unassignedFarmPosting.receipt.fulfilment.id,
+      randomUUID(),
+    );
+    const otherOrg = await prisma.organization.create({
+      data: { name: 'Other tenant', slug: randomUUID() },
+    });
+    const otherUser = await prisma.user.create({
+      data: { email: `${randomUUID()}@example.com`, passwordHash: 'unused' },
+    });
+    const otherMembership = await prisma.organizationMembership.create({
+      data: {
+        organizationId: otherOrg.id,
+        userId: otherUser.id,
+        role: 'ADMIN',
+      },
+    });
+    const otherContext = new OrganizationContext(
+      otherOrg.id,
+      otherMembership.id,
+      otherUser.id,
+      'ADMIN',
+    );
+    await expect(
+      invoices.get(otherContext, issued.invoice.id),
+    ).rejects.toMatchObject({ code: 'INVOICE_NOT_FOUND' });
+    const list = await invoices.list(staff, { page: 1, pageSize: 20 });
+    expect(list.meta.totalItems).toBe(2);
+    expect(
+      list.data.some(
+        (invoice) => invoice.id === unassignedFarmInvoice.invoice.id,
+      ),
+    ).toBe(true);
+    const withoutInvoiceRead = vi
+      .spyOn(invoiceAuthorization, 'hasAllPermissions')
+      .mockReturnValue(false);
+    await expect(invoices.get(staff, issued.invoice.id)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    withoutInvoiceRead.mockRestore();
+  });
+
+  it('scopes invoice idempotency keys by organization and rejects foreign sources', async () => {
+    const localOrder = await order('PRODUCE', '2');
+    const localPosting = await post(
+      localOrder,
+      body(localOrder, 'PRODUCE', '1'),
+    );
+
+    const foreignOrganization = await prisma.organization.create({
+      data: { name: 'Foreign invoice tenant', slug: randomUUID() },
+    });
+    const foreignUser = await prisma.user.create({
+      data: { email: `${randomUUID()}@example.com`, passwordHash: 'unused' },
+    });
+    const foreignMembership = await prisma.organizationMembership.create({
+      data: {
+        organizationId: foreignOrganization.id,
+        userId: foreignUser.id,
+        role: 'ADMIN',
+      },
+    });
+    const foreignContext = new OrganizationContext(
+      foreignOrganization.id,
+      foreignMembership.id,
+      foreignUser.id,
+      'ADMIN',
+    );
+    const foreignFarm = await prisma.farm.create({
+      data: {
+        organizationId: foreignOrganization.id,
+        code: 'FARM-1',
+        name: 'Foreign farm',
+      },
+    });
+    const foreignCustomer = await prisma.customer.create({
+      data: {
+        organizationId: foreignOrganization.id,
+        code: 'CUS-1',
+        type: 'BUSINESS',
+        name: 'Foreign customer',
+      },
+    });
+    const foreignFlock = await prisma.flock.create({
+      data: {
+        organizationId: foreignOrganization.id,
+        farmId: foreignFarm.id,
+        code: 'FLK-1',
+        name: 'Foreign flock',
+        startingBirdCount: 5,
+        placementDate: new Date(occurredAt),
+      },
+    });
+    const foreignProduct = await prisma.salesProduct.create({
+      data: {
+        organizationId: foreignOrganization.id,
+        code: 'BIRD-1',
+        name: 'Birds',
+        kind: 'POULTRY',
+        unit: 'EACH',
+      },
+    });
+    await prisma.poultryProductSource.create({
+      data: {
+        organizationId: foreignOrganization.id,
+        farmId: foreignFarm.id,
+        productId: foreignProduct.id,
+        flockId: foreignFlock.id,
+        actorUserId: foreignUser.id,
+      },
+    });
+    const foreignDraft = await orders.create(foreignContext, {
+      customerId: foreignCustomer.id,
+      currency: 'JMD',
+      terms: { saleType: 'CASH', creditTermDays: null },
+      lines: [
+        {
+          productId: foreignProduct.id,
+          expectedProduct: { kind: 'POULTRY', unit: 'EACH' },
+          quantity: '2',
+          unitPrice: '10',
+        },
+      ],
+    });
+    const foreignOrder = await orders.confirm(foreignContext, foreignDraft.id, {
+      expectedOrderVersion: foreignDraft.version,
+    });
+    const foreignPosting = await service.post(
+      foreignContext,
+      foreignFarm.id,
+      foreignOrder.id,
+      randomUUID(),
+      {
+        expectedOrderVersion: foreignOrder.version,
+        occurredAt,
+        allocations: [
+          {
+            kind: 'POULTRY',
+            orderLineId: foreignOrder.lines[0]!.id,
+            flockId: foreignFlock.id,
+            quantity: '1',
+          },
+        ],
+      },
+    );
+
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"scope-test","version":"1"}',
+    );
+    const sharedKey = randomUUID();
+    const localInvoice = await invoices.issue(
+      context,
+      localPosting.receipt.fulfilment.id,
+      sharedKey,
+    );
+    const foreignInvoice = await invoices.issue(
+      foreignContext,
+      foreignPosting.receipt.fulfilment.id,
+      sharedKey,
+    );
+    expect(localInvoice.invoice.id).not.toBe(foreignInvoice.invoice.id);
+    expect(
+      await prisma.invoiceIssueCommand.count({ where: { key: sharedKey } }),
+    ).toBe(2);
+    await expect(
+      prisma.invoiceLifecycleEvent.create({
+        data: {
+          organizationId: context.organizationId,
+          invoiceId: localInvoice.invoice.id,
+          actorMembershipId: foreignMembership.id,
+          type: 'ISSUED',
+          details: { source: 'CROSS_TENANT_TEST' },
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      invoices.issue(
+        context,
+        foreignPosting.receipt.fulfilment.id,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'FULFILMENT_NOT_FOUND' });
+  });
+
+  it('denies invoice reads and issuance after membership revocation', async () => {
+    const o = await order('PRODUCE', '4');
+    const firstPosting = await post(o, body(o, 'PRODUCE', '1'));
+    const nextOrder = { ...o, version: firstPosting.receipt.orderVersion };
+    const secondPosting = await post(
+      nextOrder,
+      body(nextOrder, 'PRODUCE', '1'),
+    );
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"membership-test","version":"1"}',
+    );
+    const issued = await invoices.issue(
+      context,
+      firstPosting.receipt.fulfilment.id,
+      randomUUID(),
+    );
+    await prisma.organizationMembership.update({
+      where: { id: context.membershipId },
+      data: { isActive: false },
+    });
+    await expect(
+      invoices.get(context, issued.invoice.id),
+    ).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    await expect(
+      invoices.issue(
+        context,
+        secondPosting.receipt.fulfilment.id,
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });

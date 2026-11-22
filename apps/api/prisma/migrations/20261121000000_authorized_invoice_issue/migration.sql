@@ -1,0 +1,4 @@
+-- Actor membership constraints are tenant scoped; audit attribution cannot cross organizations.
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_organizationId_issuedByMembershipId_fkey" FOREIGN KEY ("organizationId", "issuedByMembershipId") REFERENCES "organization_memberships"("organizationId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "invoice_issue_commands" ADD CONSTRAINT "invoice_issue_commands_organizationId_actorMembershipId_fkey" FOREIGN KEY ("organizationId", "actorMembershipId") REFERENCES "organization_memberships"("organizationId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "invoice_lifecycle_events" ADD CONSTRAINT "invoice_lifecycle_events_organizationId_actorMembershipId_fkey" FOREIGN KEY ("organizationId", "actorMembershipId") REFERENCES "organization_memberships"("organizationId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;

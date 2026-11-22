@@ -1,0 +1,2 @@
+CREATE TYPE "InvoiceTaxTreatmentStatus" AS ENUM ('PENDING_POLICY', 'APPROVED_POLICY_NOT_CALCULATED');
+ALTER TABLE "invoices" ADD COLUMN "taxTreatmentStatus" "InvoiceTaxTreatmentStatus" NOT NULL DEFAULT 'PENDING_POLICY';

@@ -454,6 +454,19 @@ export class FulfilmentsService {
         if (!original) throw missing();
         const order = await this.order(tx, context, original.orderId);
         this.checkOrder(order, input.expectedOrderVersion, true);
+        if (
+          await tx.invoiceLine.findFirst({
+            where: {
+              organizationId: context.organizationId,
+              fulfilmentLineId: { in: original.lines.map((line) => line.id) },
+            },
+            select: { id: true },
+          })
+        )
+          throw fault(
+            'INVOICED_FULFILMENT_REVERSAL_BLOCKED',
+            'An invoiced fulfilment cannot be reversed before credit-note corrections are available',
+          );
         if (original.kind !== 'POSTING')
           throw fault(
             'FULFILMENT_REVERSAL_INVALID',
