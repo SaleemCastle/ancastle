@@ -355,6 +355,7 @@ export * from './application-context.js';
 export * from './pagination.js';
 export * from './sales.js';
 export * from './sales-v2.js';
+export * from './invoice.js';
 
 // LOCK cutover: preserve staged import names as aliases to the now-active contract.
 export const createInventoryMovementV2Schema = createInventoryMovementSchema;

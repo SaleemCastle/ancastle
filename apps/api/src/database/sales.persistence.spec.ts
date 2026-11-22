@@ -31,15 +31,23 @@ describe('Sales persistence and additive migration', () => {
   let scratch: string;
   let freshConfig: string;
   let legacy: Awaited<ReturnType<typeof seedLegacy>>;
+  let upgradedM5: {
+    organizationId: string;
+    orderId: string;
+    fulfilmentId: string;
+    fulfilmentLineId: string;
+    commandId: string;
+  };
 
-  async function deploy(name: string, includeSales: boolean) {
-    const directory = join(scratch, `${name}-${includeSales ? 'sales' : 'm4'}`);
+  async function deploy(name: string, throughMigration?: string) {
+    const directory = join(scratch, `${name}-${throughMigration ?? 'all'}`);
     await mkdir(join(directory, 'migrations'), { recursive: true });
     await cp(resolve('prisma/schema.prisma'), join(directory, 'schema.prisma'));
     for (const entry of await readdir(resolve('prisma/migrations'))) {
       if (
         entry !== 'migration_lock.toml' &&
-        (entry > migrationName || (entry === migrationName && !includeSales))
+        throughMigration !== undefined &&
+        entry > throughMigration
       )
         continue;
       await cp(
@@ -76,7 +84,7 @@ datasource: {url: process.env.DATABASE_URL}});`,
       );
     } catch {
       throw new Error(
-        `Migration deployment failed for disposable ${includeSales ? 'M5' : 'M4'} database`,
+        `Migration deployment failed for disposable database through ${throughMigration ?? 'latest'}`,
       );
     }
     return config;
@@ -92,10 +100,23 @@ datasource: {url: process.env.DATABASE_URL}});`,
       await admin.$executeRawUnsafe(`CREATE DATABASE "${name}"`);
       createdDatabases.push(name);
     }
-    freshConfig = await deploy(databaseNames[0]!, true);
-    await deploy(databaseNames[1]!, false);
+    freshConfig = await deploy(databaseNames[0]!);
+    await deploy(databaseNames[1]!, '20261113155959_pre_sales');
     legacy = await seedLegacy(upgrade);
-    await deploy(databaseNames[1]!, true);
+    await deploy(databaseNames[1]!, migrationName);
+    upgradedM5 = await upgrade.$transaction(async (tx) => {
+      const fixture = await seed(tx);
+      await confirm(tx, fixture);
+      const posted = await batch(tx, fixture);
+      return {
+        organizationId: fixture.org.id,
+        orderId: fixture.order.id,
+        fulfilmentId: posted.event.id,
+        fulfilmentLineId: posted.allocation.id,
+        commandId: posted.receipt!.id,
+      };
+    });
+    await deploy(databaseNames[1]!);
   }, 120_000);
 
   afterAll(async () => {
@@ -565,6 +586,43 @@ datasource: {url: process.env.DATABASE_URL}});`,
     expect(migrations[0]!.finished_at).toBeInstanceOf(Date);
     expect(await fresh.order.count()).toBe(0);
     expect(await fresh.fulfilmentCommand.count()).toBe(0);
+    const invoiceAmounts = await fresh.$queryRaw<
+      {
+        table_name: string;
+        column_name: string;
+        numeric_precision: number;
+        numeric_scale: number;
+      }[]
+    >`
+      SELECT table_name, column_name, numeric_precision, numeric_scale
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND ((table_name = 'invoices' AND column_name = 'grossAmount')
+          OR (table_name = 'invoice_lines' AND column_name = 'lineAmount'))`;
+    expect(invoiceAmounts).toEqual(
+      expect.arrayContaining([
+        {
+          table_name: 'invoices',
+          column_name: 'grossAmount',
+          numeric_precision: 34,
+          numeric_scale: 2,
+        },
+        {
+          table_name: 'invoice_lines',
+          column_name: 'lineAmount',
+          numeric_precision: 34,
+          numeric_scale: 2,
+        },
+      ]),
+    );
+    const maximumGross = '99999999999999999890000000000000.00';
+    const accepted = await fresh.$queryRaw<{ amount: Prisma.Decimal }[]>`
+      SELECT ${maximumGross}::DECIMAL(34,2) AS amount`;
+    expect(accepted[0]!.amount.toFixed(2)).toBe(maximumGross);
+    await expect(
+      fresh.$queryRaw`
+        SELECT ${'199999999999999998900000000000000.00'}::DECIMAL(34,2) AS amount`,
+    ).rejects.toThrow();
   });
 
   it('keeps the deployed Prisma structure in sync with the schema', async () => {
@@ -635,6 +693,51 @@ datasource: {url: process.env.DATABASE_URL}});`,
         },
       });
     });
+  });
+
+  it('upgrades a populated M5 database to M6 without rewriting fulfilment ledgers', async () => {
+    expect(
+      await upgrade.order.findFirst({
+        where: {
+          organizationId: upgradedM5.organizationId,
+          id: upgradedM5.orderId,
+        },
+      }),
+    ).not.toBeNull();
+    expect(
+      await upgrade.fulfilment.findFirst({
+        where: {
+          organizationId: upgradedM5.organizationId,
+          id: upgradedM5.fulfilmentId,
+        },
+      }),
+    ).not.toBeNull();
+    expect(
+      await upgrade.fulfilmentLine.findFirst({
+        where: {
+          organizationId: upgradedM5.organizationId,
+          id: upgradedM5.fulfilmentLineId,
+        },
+      }),
+    ).not.toBeNull();
+    expect(
+      await upgrade.fulfilmentCommand.findFirst({
+        where: {
+          organizationId: upgradedM5.organizationId,
+          id: upgradedM5.commandId,
+        },
+      }),
+    ).not.toBeNull();
+    expect(
+      await upgrade.invoice.count({
+        where: { organizationId: upgradedM5.organizationId },
+      }),
+    ).toBe(0);
+    expect(
+      await upgrade.invoiceFulfilmentAllocation.count({
+        where: { organizationId: upgradedM5.organizationId },
+      }),
+    ).toBe(0);
   });
 
   it('enforces tenant-safe customer/catalog links and poultry-only eligibility', async () => {

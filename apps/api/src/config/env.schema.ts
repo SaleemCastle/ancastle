@@ -3,6 +3,12 @@ import { z } from 'zod';
 export const envSchema = z.object({
   // Release operators enable only after the M5 compatibility manifest is signed.
   SALES_FULFILMENT_ENABLED: z.enum(['false', 'true']).default('false'),
+  M6_INVOICE_ISSUANCE_ENABLED: z.enum(['false', 'true']).default('false'),
+  M6_INVOICE_TAX_POLICY_READY: z.enum(['false', 'true']).default('false'),
+  // Parsed strictly by the issuance gate so invalid policy cannot prevent M5 API boot.
+  M6_INVOICE_TAX_POLICY_CONFIG: z
+    .string()
+    .default('{"state":"PENDING_POLICY"}'),
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
     .default('development'),

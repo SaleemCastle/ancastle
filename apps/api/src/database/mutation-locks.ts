@@ -18,6 +18,7 @@ type FlockPosition = { farmId: string; flockId: string };
 export interface MutationLockPlan {
   parent?: 'KEY SHARE' | 'UPDATE';
   command?: { farmId: string; operation: 'POST' | 'REVERSE'; key: string };
+  financialCommand?: { operation: 'ISSUE_INVOICE'; key: string };
   orderId?: string;
   definitions?: Partial<Record<DefinitionTable, readonly DefinitionLock[]>>;
   flocks?: readonly FlockPosition[];
@@ -50,6 +51,9 @@ function normalize(organizationId: string, plan: MutationLockPlan) {
     command: plan.command
       ? `${canonical(plan.command.farmId)}:${plan.command.operation}:${canonical(plan.command.key)}`
       : undefined,
+    financialCommand: plan.financialCommand
+      ? `${plan.financialCommand.operation}:${canonical(plan.financialCommand.key)}`
+      : undefined,
     orderId: plan.orderId ? canonical(plan.orderId) : undefined,
     definitions,
     flocks: new Set((plan.flocks ?? []).map(flockKey)),
@@ -68,6 +72,8 @@ function covers(held: HeldLocks, next: HeldLocks) {
     held.organizationId === next.organizationId &&
     (held.parent === 'UPDATE' || next.parent === 'KEY SHARE') &&
     (!next.command || next.command === held.command) &&
+    (!next.financialCommand ||
+      next.financialCommand === held.financialCommand) &&
     (!next.orderId || next.orderId === held.orderId) &&
     [...next.definitions].every(
       ([key, mode]) =>
@@ -114,6 +120,11 @@ async function acquireLocks(tx: Prisma.TransactionClient, locks: HeldLocks) {
   if (locks.command) {
     await tx.$executeRaw(
       Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${locks.organizationId}), hashtext(${`fulfilment:${locks.command}`}))`,
+    );
+  }
+  if (locks.financialCommand) {
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${locks.organizationId}), hashtext(${`financial:${locks.financialCommand}`}))`,
     );
   }
   if (locks.orderId) {

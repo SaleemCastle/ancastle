@@ -2,6 +2,8 @@ export const Permission = {
   FULFILMENT_READ: 'fulfilment:read',
   FULFILMENT_POST: 'fulfilment:post',
   FULFILMENT_REVERSE: 'fulfilment:reverse',
+  INVOICE_READ: 'invoice:read',
+  INVOICE_ISSUE: 'invoice:issue',
   SALES_PRODUCT_READ: 'sales-product:read',
   SALES_PRODUCT_MANAGE: 'sales-product:manage',
   SALES_PRODUCT_SOURCE_MANAGE: 'sales-product-source:manage',

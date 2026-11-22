@@ -14,6 +14,8 @@ export const rolePermissions: Record<
     Permission.FULFILMENT_READ,
     Permission.FULFILMENT_POST,
     Permission.FULFILMENT_REVERSE,
+    Permission.INVOICE_READ,
+    Permission.INVOICE_ISSUE,
     Permission.SALES_PRODUCT_READ,
     Permission.SALES_PRODUCT_MANAGE,
     Permission.SALES_PRODUCT_SOURCE_MANAGE,
@@ -60,6 +62,7 @@ export const rolePermissions: Record<
 
   [MembershipRole.MANAGER]: [
     Permission.FULFILMENT_READ,
+    Permission.INVOICE_READ,
     Permission.FULFILMENT_POST,
     Permission.SALES_PRODUCT_READ,
     Permission.SALES_PRODUCT_MANAGE,
@@ -97,6 +100,7 @@ export const rolePermissions: Record<
 
   [MembershipRole.STAFF]: [
     Permission.FULFILMENT_READ,
+    Permission.INVOICE_READ,
     Permission.FULFILMENT_POST,
     Permission.SALES_PRODUCT_READ,
     Permission.ORDER_READ,

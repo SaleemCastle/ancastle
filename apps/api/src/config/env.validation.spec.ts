@@ -38,6 +38,11 @@ describe('validateEnvironment', () => {
     expect(result.API_PORT).toBe(4000);
     expect(result.LOG_LEVEL).toBe('info');
     expect(result.SALES_FULFILMENT_ENABLED).toBe('false');
+    expect(result.M6_INVOICE_ISSUANCE_ENABLED).toBe('false');
+    expect(result.M6_INVOICE_TAX_POLICY_READY).toBe('false');
+    expect(result.M6_INVOICE_TAX_POLICY_CONFIG).toBe(
+      '{"state":"PENDING_POLICY"}',
+    );
   });
 
   it('accepts only explicit server fulfilment activation values', () => {
