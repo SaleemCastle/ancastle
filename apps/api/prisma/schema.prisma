@@ -41,30 +41,35 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  farms                   Farm[]
-  organizationMemberships OrganizationMembership[]
-  customers               Customer[]
-  suppliers               Supplier[]
-  inventoryItems          InventoryItem[]
-  inventoryMovements      InventoryMovement[]
-  flocks                  Flock[]
-  mortalityEvents         MortalityEvent[]
-  feedUsages              FeedUsage[]
-  salesProducts           SalesProduct[]
-  poultryProductSources   PoultryProductSource[]
-  orders                  Order[]
-  orderLines              OrderLine[]
-  orderEvents             OrderEvent[]
-  fulfilments             Fulfilment[]
-  fulfilmentLines         FulfilmentLine[]
-  flockSaleDepletions     FlockSaleDepletion[]
-  fulfilmentCommands      FulfilmentCommand[]
-  invoices                Invoice[]
-  invoiceLines            InvoiceLine[]
-  invoiceAllocations      InvoiceFulfilmentAllocation[]
-  invoiceSequences        InvoiceSequence[]
-  invoiceIssueCommands    InvoiceIssueCommand[]
-  invoiceLifecycleEvents  InvoiceLifecycleEvent[]
+  farms                      Farm[]
+  organizationMemberships    OrganizationMembership[]
+  customers                  Customer[]
+  suppliers                  Supplier[]
+  inventoryItems             InventoryItem[]
+  inventoryMovements         InventoryMovement[]
+  flocks                     Flock[]
+  mortalityEvents            MortalityEvent[]
+  feedUsages                 FeedUsage[]
+  salesProducts              SalesProduct[]
+  poultryProductSources      PoultryProductSource[]
+  orders                     Order[]
+  orderLines                 OrderLine[]
+  orderEvents                OrderEvent[]
+  fulfilments                Fulfilment[]
+  fulfilmentLines            FulfilmentLine[]
+  flockSaleDepletions        FlockSaleDepletion[]
+  fulfilmentCommands         FulfilmentCommand[]
+  invoices                   Invoice[]
+  invoiceLines               InvoiceLine[]
+  invoiceAllocations         InvoiceFulfilmentAllocation[]
+  invoiceSequences           InvoiceSequence[]
+  invoiceIssueCommands       InvoiceIssueCommand[]
+  invoiceLifecycleEvents     InvoiceLifecycleEvent[]
+  payments                   Payment[]
+  paymentEvents              PaymentLifecycleEvent[]
+  paymentAllocations         PaymentAllocation[]
+  paymentAllocationReversals PaymentAllocationReversal[]
+  paymentCommands            PaymentCommandReceipt[]
 
   @@map("organizations")
 }
@@ -143,18 +148,23 @@ model OrganizationMembership {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  farmAccessAssignments  FarmAccessAssignment[]
-  mortalityEvents        MortalityEvent[]
-  feedUsages             FeedUsage[]
-  poultryProductSources  PoultryProductSource[]
-  orders                 Order[]
-  orderEvents            OrderEvent[]
-  fulfilments            Fulfilment[]
-  flockSaleDepletions    FlockSaleDepletion[]
-  fulfilmentCommands     FulfilmentCommand[]
-  issuedInvoices         Invoice[]               @relation("InvoiceIssuer")
-  invoiceIssueCommands   InvoiceIssueCommand[]   @relation("InvoiceIssueActor")
-  invoiceLifecycleEvents InvoiceLifecycleEvent[] @relation("InvoiceEventActor")
+  farmAccessAssignments      FarmAccessAssignment[]
+  mortalityEvents            MortalityEvent[]
+  feedUsages                 FeedUsage[]
+  poultryProductSources      PoultryProductSource[]
+  orders                     Order[]
+  orderEvents                OrderEvent[]
+  fulfilments                Fulfilment[]
+  flockSaleDepletions        FlockSaleDepletion[]
+  fulfilmentCommands         FulfilmentCommand[]
+  issuedInvoices             Invoice[]                   @relation("InvoiceIssuer")
+  invoiceIssueCommands       InvoiceIssueCommand[]       @relation("InvoiceIssueActor")
+  invoiceLifecycleEvents     InvoiceLifecycleEvent[]     @relation("InvoiceEventActor")
+  recordedPayments           Payment[]                   @relation("PaymentRecorder")
+  paymentEvents              PaymentLifecycleEvent[]     @relation("PaymentEventActor")
+  paymentAllocations         PaymentAllocation[]         @relation("PaymentAllocationActor")
+  paymentAllocationReversals PaymentAllocationReversal[] @relation("PaymentAllocationReversalActor")
+  paymentCommands            PaymentCommandReceipt[]     @relation("PaymentCommandActor")
 
   @@unique([organizationId, id])
   @@unique([organizationId, userId])
@@ -220,6 +230,7 @@ model Customer {
 
   orders   Order[]
   invoices Invoice[]
+  payments Payment[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, code])
@@ -465,6 +476,24 @@ enum InvoiceTaxTreatmentStatus {
 
 enum InvoiceState {
   ISSUED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+}
+
+enum PaymentLifecycleType {
+  RECORDED
+  VERIFIED
+  REVERSED
+}
+
+enum PaymentCommandType {
+  RECORD
+  VERIFY
+  ALLOCATE
+  REVERSE
 }
 
 // Definitions and eligibility are not physical stock or reservations.
@@ -769,18 +798,20 @@ model Invoice {
   status                  InvoiceState              @default(ISSUED)
   createdAt               DateTime                  @default(now())
 
-  organization Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  customer     Customer                      @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict)
-  order        Order                         @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict)
-  farm         Farm                          @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict)
-  fulfilment   Fulfilment                    @relation("InvoiceFulfilment", fields: [organizationId, farmId, orderId, fulfilmentId], references: [organizationId, farmId, orderId, id], onDelete: Restrict)
-  issuedBy     OrganizationMembership        @relation("InvoiceIssuer", fields: [organizationId, issuedByMembershipId], references: [organizationId, id], onDelete: Restrict)
-  lines        InvoiceLine[]                 @relation("InvoiceLines")
-  allocations  InvoiceFulfilmentAllocation[] @relation("InvoiceAllocations")
-  events       InvoiceLifecycleEvent[]
-  commands     InvoiceIssueCommand[]
+  organization       Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer           Customer                      @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict)
+  order              Order                         @relation(fields: [organizationId, orderId], references: [organizationId, id], onDelete: Restrict)
+  farm               Farm                          @relation(fields: [organizationId, farmId], references: [organizationId, id], onDelete: Restrict)
+  fulfilment         Fulfilment                    @relation("InvoiceFulfilment", fields: [organizationId, farmId, orderId, fulfilmentId], references: [organizationId, farmId, orderId, id], onDelete: Restrict)
+  issuedBy           OrganizationMembership        @relation("InvoiceIssuer", fields: [organizationId, issuedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  lines              InvoiceLine[]                 @relation("InvoiceLines")
+  allocations        InvoiceFulfilmentAllocation[] @relation("InvoiceAllocations")
+  paymentAllocations PaymentAllocation[]
+  events             InvoiceLifecycleEvent[]
+  commands           InvoiceIssueCommand[]
 
   @@unique([organizationId, id])
+  @@unique([organizationId, id, customerId, currency])
   @@unique([organizationId, farmId, orderId, id])
   @@unique([organizationId, farmId, orderId, fulfilmentId])
   @@unique([organizationId, invoiceNumber])
@@ -870,4 +901,118 @@ model InvoiceLifecycleEvent {
 
   @@index([organizationId, invoiceId, createdAt])
   @@map("invoice_lifecycle_events")
+}
+
+// Payment state and balances are derived from append-only financial records.
+model Payment {
+  id                     String        @id @default(uuid()) @db.Uuid
+  organizationId         String        @db.Uuid
+  customerId             String        @db.Uuid
+  amount                 Decimal       @db.Decimal(34, 2)
+  currency               String        @default("JMD") @db.VarChar(3)
+  method                 PaymentMethod
+  cashReceiptNumber      String?       @db.VarChar(200)
+  receivingAccount       String?       @db.VarChar(200)
+  bankTransferReference  String?       @db.VarChar(200)
+  evidenceKey            String        @db.VarChar(500)
+  recordedByMembershipId String        @db.Uuid
+  recordedAt             DateTime      @default(now())
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer     Customer                    @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict)
+  recordedBy   OrganizationMembership      @relation("PaymentRecorder", fields: [organizationId, recordedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  events       PaymentLifecycleEvent[]
+  allocations  PaymentAllocation[]
+  reversals    PaymentAllocationReversal[]
+  commands     PaymentCommandReceipt[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, id, customerId, currency])
+  @@unique([organizationId, method, evidenceKey])
+  @@index([organizationId, customerId, recordedAt, id])
+  @@map("payments")
+}
+
+model PaymentLifecycleEvent {
+  id                String               @id @default(uuid()) @db.Uuid
+  organizationId    String               @db.Uuid
+  paymentId         String               @db.Uuid
+  type              PaymentLifecycleType
+  actorMembershipId String               @db.Uuid
+  reason            String?              @db.VarChar(500)
+  selfVerification  Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payment      Payment                @relation(fields: [organizationId, paymentId], references: [organizationId, id], onDelete: Restrict)
+  actor        OrganizationMembership @relation("PaymentEventActor", fields: [organizationId, actorMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, paymentId, id])
+  @@unique([organizationId, paymentId, type])
+  @@index([organizationId, paymentId, createdAt, id])
+  @@map("payment_lifecycle_events")
+}
+
+model PaymentAllocation {
+  id                      String   @id @default(uuid()) @db.Uuid
+  organizationId          String   @db.Uuid
+  paymentId               String   @db.Uuid
+  invoiceId               String   @db.Uuid
+  customerId              String   @db.Uuid
+  currency                String   @db.VarChar(3)
+  amount                  Decimal  @db.Decimal(34, 2)
+  allocatedByMembershipId String   @db.Uuid
+  createdAt               DateTime @default(now())
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payment      Payment                     @relation(fields: [organizationId, paymentId, customerId, currency], references: [organizationId, id, customerId, currency], onDelete: Restrict)
+  invoice      Invoice                     @relation(fields: [organizationId, invoiceId, customerId, currency], references: [organizationId, id, customerId, currency], onDelete: Restrict)
+  allocatedBy  OrganizationMembership      @relation("PaymentAllocationActor", fields: [organizationId, allocatedByMembershipId], references: [organizationId, id], onDelete: Restrict)
+  reversals    PaymentAllocationReversal[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, paymentId, id])
+  @@unique([organizationId, paymentId, invoiceId, id])
+  @@index([organizationId, paymentId, createdAt, id])
+  @@index([organizationId, invoiceId, createdAt, id])
+  @@map("payment_allocations")
+}
+
+model PaymentAllocationReversal {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @db.Uuid
+  paymentId         String   @db.Uuid
+  allocationId      String   @db.Uuid
+  amount            Decimal  @db.Decimal(34, 2)
+  reason            String   @db.VarChar(500)
+  actorMembershipId String   @db.Uuid
+  createdAt         DateTime @default(now())
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payment      Payment                @relation(fields: [organizationId, paymentId], references: [organizationId, id], onDelete: Restrict)
+  allocation   PaymentAllocation      @relation(fields: [organizationId, paymentId, allocationId], references: [organizationId, paymentId, id], onDelete: Restrict)
+  actor        OrganizationMembership @relation("PaymentAllocationReversalActor", fields: [organizationId, actorMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, allocationId])
+  @@index([organizationId, paymentId, createdAt, id])
+  @@map("payment_allocation_reversals")
+}
+
+model PaymentCommandReceipt {
+  id                String             @id @default(uuid()) @db.Uuid
+  organizationId    String             @db.Uuid
+  key               String             @db.Uuid
+  type              PaymentCommandType
+  requestHash       String             @db.VarChar(64)
+  paymentId         String             @db.Uuid
+  actorMembershipId String             @db.Uuid
+  createdAt         DateTime           @default(now())
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payment      Payment                @relation(fields: [organizationId, paymentId], references: [organizationId, id], onDelete: Restrict)
+  actor        OrganizationMembership @relation("PaymentCommandActor", fields: [organizationId, actorMembershipId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, key])
+  @@index([organizationId, paymentId, createdAt])
+  @@map("payment_command_receipts")
 }

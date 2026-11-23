@@ -8,7 +8,9 @@ import { PrismaClient } from '../generated/prisma/client.js';
 /** Real commits/concurrency without deleting append-only fixtures or disabling
  * triggers. Only the randomly named database owned by this helper is removed.
  */
-export async function temporaryDatabase() {
+export async function temporaryDatabase(
+  options: { throughMigration?: string } = {},
+) {
   const admin = new PrismaService();
   const databaseName = `poultry_test_${randomUUID().replaceAll('-', '')}`;
   let created = false;
@@ -39,7 +41,10 @@ export async function temporaryDatabase() {
       for (const entry of (
         await readdir(migrations, { withFileTypes: true })
       ).sort((a, b) => a.name.localeCompare(b.name))) {
-        if (entry.isDirectory()) {
+        if (
+          entry.isDirectory() &&
+          (!options.throughMigration || entry.name <= options.throughMigration)
+        ) {
           // The pg simple-query protocol preserves PL/pgSQL dollar-quoted bodies.
           await setup
             .underlyingDriver()
@@ -60,7 +65,7 @@ export async function temporaryDatabase() {
       adapter: new PrismaPg({ connectionString: url.toString() }),
     }) as PrismaService;
     await prisma.$connect();
-    return { prisma, dispose };
+    return { prisma, dispose, connectionString: url.toString() };
   } catch (error) {
     await dispose();
     throw error;

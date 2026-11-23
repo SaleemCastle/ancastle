@@ -20,6 +20,7 @@ import { PoultryModule } from './modules/poultry/poultry.module.js';
 import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module.js';
 import { FulfilmentsModule } from './modules/fulfilments/fulfilments.module.js';
 import { InvoicesModule } from './modules/invoices/invoices.module.js';
+import { PaymentsModule } from './modules/payments/payments.module.js';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { InvoicesModule } from './modules/invoices/invoices.module.js';
     SalesOrdersModule,
     FulfilmentsModule,
     InvoicesModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}
