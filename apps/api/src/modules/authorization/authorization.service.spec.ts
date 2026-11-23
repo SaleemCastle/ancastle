@@ -51,6 +51,49 @@ describe('AuthorizationService', () => {
     ).toBe(false);
   });
 
+  it('keeps payment permissions separate from invoice read by role', () => {
+    expect(
+      service.hasPermission(MembershipRole.OWNER, Permission.PAYMENT_REVERSE),
+    ).toBe(true);
+    expect(
+      service.hasPermission(MembershipRole.ADMIN, Permission.PAYMENT_REVERSE),
+    ).toBe(true);
+    for (const permission of [
+      Permission.PAYMENT_READ,
+      Permission.PAYMENT_RECORD,
+      Permission.PAYMENT_VERIFY,
+      Permission.PAYMENT_ALLOCATE,
+    ]) {
+      expect(service.hasPermission(MembershipRole.MANAGER, permission)).toBe(
+        true,
+      );
+    }
+    expect(
+      service.hasPermission(MembershipRole.MANAGER, Permission.PAYMENT_REVERSE),
+    ).toBe(false);
+    expect(
+      service.hasPermission(MembershipRole.STAFF, Permission.PAYMENT_READ),
+    ).toBe(true);
+    expect(
+      service.hasPermission(MembershipRole.STAFF, Permission.PAYMENT_RECORD),
+    ).toBe(true);
+    for (const permission of [
+      Permission.PAYMENT_VERIFY,
+      Permission.PAYMENT_ALLOCATE,
+      Permission.PAYMENT_REVERSE,
+    ]) {
+      expect(service.hasPermission(MembershipRole.STAFF, permission)).toBe(
+        false,
+      );
+    }
+    expect(
+      service.hasPermission(MembershipRole.STAFF, Permission.INVOICE_READ),
+    ).toBe(true);
+    expect(
+      service.hasPermission(MembershipRole.STAFF, Permission.PAYMENT_VERIFY),
+    ).toBe(false);
+  });
+
   it('limits staff to basic organization and farm access', () => {
     expect(
       service.hasPermission(MembershipRole.STAFF, Permission.ORGANIZATION_READ),

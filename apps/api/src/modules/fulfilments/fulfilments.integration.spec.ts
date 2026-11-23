@@ -31,6 +31,8 @@ import { FulfilmentsModule } from './fulfilments.module.js';
 import { FulfilmentsService } from './fulfilments.service.js';
 import { InvoicesModule } from '../invoices/invoices.module.js';
 import { InvoicesService } from '../invoices/invoices.service.js';
+import { PaymentsModule } from '../payments/payments.module.js';
+import { PaymentsService } from '../payments/payments.service.js';
 
 function barrier<T = void>() {
   let resolve!: (value: T) => void;
@@ -48,12 +50,14 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
     stock: InventoryStockService,
     invoices: InvoicesService;
   let invoiceAuthorization: AuthorizationService;
+  let payments: PaymentsService;
   let farms: FarmAccessService;
   const authorization = new AuthorizationService();
   const activation = new FulfilmentActivationService();
   let context: OrganizationContext,
     staff: OrganizationContext,
-    manager: OrganizationContext;
+    manager: OrganizationContext,
+    owner: OrganizationContext;
   let farmId: string,
     secondFarm: string,
     flockId: string,
@@ -351,6 +355,7 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
         FulfilmentsModule,
         CustomersModule,
         InvoicesModule,
+        PaymentsModule,
       ],
     })
       .overrideProvider(PrismaService)
@@ -366,6 +371,7 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
     farms = module.get(FarmAccessService);
     invoices = module.get(InvoicesService);
     invoiceAuthorization = module.get(AuthorizationService);
+    payments = module.get(PaymentsService);
   }, 120_000);
   afterAll(async () => {
     await app?.close();
@@ -380,7 +386,7 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
     const org = await prisma.organization.create({
       data: { name: 'Sales', slug: randomUUID() },
     });
-    async function member(role: 'ADMIN' | 'STAFF' | 'MANAGER') {
+    async function member(role: 'ADMIN' | 'STAFF' | 'MANAGER' | 'OWNER') {
       const user = await prisma.user.create({
         data: { email: `${randomUUID()}@example.com`, passwordHash: 'unused' },
       });
@@ -392,6 +398,7 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
     context = await member('ADMIN');
     staff = await member('STAFF');
     manager = await member('MANAGER');
+    owner = await member('OWNER');
     const tokens = app.get(TokenService);
     adminToken = await tokens.createAccessToken(
       context.userId,
@@ -540,7 +547,11 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
           where: { organizationId: context.organizationId },
         }),
       ).toBe(0);
-      expect(Object.keys(prisma)).not.toContain('payment');
+      expect(
+        await prisma.payment.count({
+          where: { organizationId: context.organizationId },
+        }),
+      ).toBe(0);
     },
   );
 
@@ -2048,7 +2059,11 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
         where: { organizationId: context.organizationId },
       }),
     ).toBe(0);
-    expect(Object.keys(prisma)).not.toContain('payment');
+    expect(
+      await prisma.payment.count({
+        where: { organizationId: context.organizationId },
+      }),
+    ).toBe(0);
   });
 
   it('bounds, filters and stably paginates tenant-scoped customer history', async () => {
@@ -2907,5 +2922,742 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
         randomUUID(),
       ),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('records both manual methods pending verification and enforces role-specific independent verification', async () => {
+    const httpRecorded = await api()
+      .post(`/api/organizations/${context.organizationId}/payments`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        customerId,
+        amount: '8.00',
+        method: 'BANK_TRANSFER',
+        receivingAccount: 'main-account',
+        bankTransferReference: 'http-bank-ref-1',
+      })
+      .expect(201);
+    expect(httpRecorded.body.data.status).toBe('PENDING_VERIFICATION');
+    await api()
+      .post(
+        `/api/organizations/${context.organizationId}/payments/${httpRecorded.body.data.id}/verify`,
+      )
+      .set('Authorization', `Bearer ${staffToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(403);
+    await api()
+      .post(
+        `/api/organizations/${context.organizationId}/payments/${httpRecorded.body.data.id}/verify`,
+      )
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(201);
+
+    const cashKey = randomUUID();
+    const cashInput = {
+      customerId,
+      amount: '12.00',
+      method: 'CASH' as const,
+      cashReceiptNumber: 'cash-receipt-1',
+    };
+    const cash = await payments.record(context, cashInput, cashKey);
+    expect(cash.payment.status).toBe('PENDING_VERIFICATION');
+    expect(cash.payment.cashReceiptNumber).toBe('cash-receipt-1');
+    expect(
+      (await payments.record(context, cashInput, cashKey)).payment.id,
+    ).toBe(cash.payment.id);
+    await expect(
+      payments.record(context, { ...cashInput, amount: '13.00' }, cashKey),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+    await expect(
+      payments.record(
+        context,
+        {
+          customerId,
+          amount: '12.00',
+          method: 'CASH',
+          cashReceiptNumber: 'cash-receipt-1',
+        },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'PAYMENT_EVIDENCE_DUPLICATE' });
+
+    const bank = await payments.record(
+      staff,
+      {
+        customerId,
+        amount: '5.00',
+        method: 'BANK_TRANSFER',
+        receivingAccount: 'main-account',
+        bankTransferReference: 'bank-ref-1',
+      },
+      randomUUID(),
+    );
+    expect(bank.payment.status).toBe('PENDING_VERIFICATION');
+    expect(bank.payment.bankTransferReference).toBe('bank-ref-1');
+    const managerVerification = await payments.verify(
+      manager,
+      bank.payment.id,
+      randomUUID(),
+    );
+    expect(managerVerification.payment.status).toBe('VERIFIED');
+    expect(managerVerification.payment.selfVerification).toBe(false);
+    expect(managerVerification.payment.verifiedByMembershipId).toBe(
+      manager.membershipId,
+    );
+    expect(
+      managerVerification.payment.events.map((event) => event.type),
+    ).toEqual(['RECORDED', 'VERIFIED']);
+    await expect(
+      payments.reverse(
+        manager,
+        bank.payment.id,
+        { reason: 'Manager reversal is denied' },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      payments.allocate(
+        staff,
+        bank.payment.id,
+        { allocations: [{ invoiceId: randomUUID(), amount: '1.00' }] },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    const managerRecorded = await payments.record(
+      manager,
+      {
+        customerId,
+        amount: '1.00',
+        method: 'CASH',
+        cashReceiptNumber: 'manager-cash-1',
+      },
+      randomUUID(),
+    );
+    await expect(
+      payments.verify(manager, managerRecorded.payment.id, randomUUID()),
+    ).rejects.toMatchObject({ code: 'PAYMENT_SELF_VERIFICATION_DENIED' });
+
+    const adminSelf = await payments.verify(
+      context,
+      cash.payment.id,
+      randomUUID(),
+    );
+    expect(adminSelf.payment.selfVerification).toBe(true);
+    const ownerRecorded = await payments.record(
+      owner,
+      {
+        customerId,
+        amount: '2.00',
+        method: 'CASH',
+        cashReceiptNumber: 'owner-cash-1',
+      },
+      randomUUID(),
+    );
+    expect(
+      (await payments.verify(owner, ownerRecorded.payment.id, randomUUID()))
+        .payment.selfVerification,
+    ).toBe(true);
+
+    const staffRecorded = await payments.record(
+      staff,
+      {
+        customerId,
+        amount: '3.00',
+        method: 'CASH',
+        cashReceiptNumber: 'staff-cash-1',
+      },
+      randomUUID(),
+    );
+    await expect(
+      payments.verify(staff, staffRecorded.payment.id, randomUUID()),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await prisma.organizationMembership.update({
+      where: { id: manager.membershipId },
+      data: { isActive: false },
+    });
+    await expect(
+      payments.verify(manager, staffRecorded.payment.id, randomUUID()),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('enforces canonical payment evidence and account-scoped transfer identity in PostgreSQL', async () => {
+    const insertDirect = async (options: {
+      organizationId: string;
+      customerId: string;
+      membershipId: string;
+      method: 'CASH' | 'BANK_TRANSFER';
+      cashReceiptNumber: string | null;
+      receivingAccount: string | null;
+      bankTransferReference: string | null;
+      evidenceKey: string;
+      amount?: string;
+    }) =>
+      prisma.$transaction(async (tx) => {
+        const paymentId = randomUUID();
+        await tx.$executeRaw`
+          INSERT INTO "payments" (
+            "id", "organizationId", "customerId", "amount", "currency", "method",
+            "cashReceiptNumber", "receivingAccount", "bankTransferReference", "evidenceKey", "recordedByMembershipId"
+          ) VALUES (
+            ${paymentId}::uuid, ${options.organizationId}::uuid, ${options.customerId}::uuid,
+            ${options.amount ?? '1.00'}::numeric, 'JMD', ${options.method}::"PaymentMethod", ${options.cashReceiptNumber},
+            ${options.receivingAccount}, ${options.bankTransferReference}, ${options.evidenceKey}, ${options.membershipId}::uuid
+          )
+        `;
+        await tx.$executeRaw`
+          INSERT INTO "payment_lifecycle_events" (
+            "id", "organizationId", "paymentId", "type", "actorMembershipId"
+          ) VALUES (
+            ${randomUUID()}::uuid, ${options.organizationId}::uuid, ${paymentId}::uuid,
+            'RECORDED', ${options.membershipId}::uuid
+          )
+        `;
+        return paymentId;
+      });
+    const cashEvidence = {
+      organizationId: context.organizationId,
+      customerId,
+      membershipId: context.membershipId,
+      method: 'CASH' as const,
+      cashReceiptNumber: 'Cash Receipt 77',
+      receivingAccount: null,
+      bankTransferReference: null,
+    };
+    await insertDirect({ ...cashEvidence, evidenceKey: 'CASH:cashreceipt77' });
+    await insertDirect({
+      ...cashEvidence,
+      cashReceiptNumber: 'maximum payment amount',
+      evidenceKey: 'CASH:maximumpaymentamount',
+      amount: '99999999999999999999999999999999.99',
+    });
+    await expect(
+      insertDirect({
+        ...cashEvidence,
+        cashReceiptNumber: 'overflow payment amount',
+        evidenceKey: 'CASH:overflowpaymentamount',
+        amount: '100000000000000000000000000000000.00',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      insertDirect({ ...cashEvidence, evidenceKey: 'forged-unique-key' }),
+    ).rejects.toThrow(/does not match canonical evidence/);
+    await expect(
+      insertDirect({
+        ...cashEvidence,
+        cashReceiptNumber: '   ',
+        evidenceKey: 'CASH:',
+      }),
+    ).rejects.toThrow(/cash receipt evidence is empty/);
+    await expect(
+      insertDirect({
+        ...cashEvidence,
+        cashReceiptNumber: ' cashreceipt 77 ',
+        evidenceKey: 'CASH:cashreceipt77',
+      }),
+    ).rejects.toThrow();
+
+    const transferEvidence = {
+      organizationId: context.organizationId,
+      customerId,
+      membershipId: context.membershipId,
+      method: 'BANK_TRANSFER' as const,
+      cashReceiptNumber: null,
+      receivingAccount: '  Account A 1 ',
+      bankTransferReference: ' Tx Ref 88 ',
+    };
+    await insertDirect({
+      ...transferEvidence,
+      evidenceKey: 'BANK:9:accounta1:txref88',
+    });
+    await expect(
+      insertDirect({
+        ...transferEvidence,
+        receivingAccount: 'account a1',
+        bankTransferReference: 'txref 88',
+        evidenceKey: 'forged-bank-key',
+      }),
+    ).rejects.toThrow(/does not match canonical evidence/);
+    await expect(
+      insertDirect({
+        ...transferEvidence,
+        receivingAccount: 'account a1',
+        bankTransferReference: 'txref 88',
+        evidenceKey: 'BANK:9:accounta1:txref88',
+      }),
+    ).rejects.toThrow();
+    await insertDirect({
+      ...transferEvidence,
+      receivingAccount: 'account-b',
+      evidenceKey: 'BANK:9:account-b:txref88',
+    });
+
+    const otherOrg = await prisma.organization.create({
+      data: { name: 'Evidence tenant', slug: `evidence-${randomUUID()}` },
+    });
+    const otherUser = await prisma.user.create({
+      data: { email: `${randomUUID()}@example.com`, passwordHash: 'unused' },
+    });
+    const otherMembership = await prisma.organizationMembership.create({
+      data: {
+        organizationId: otherOrg.id,
+        userId: otherUser.id,
+        role: 'ADMIN',
+      },
+    });
+    const otherCustomer = await prisma.customer.create({
+      data: {
+        organizationId: otherOrg.id,
+        code: 'EVIDENCE',
+        name: 'Evidence tenant',
+        type: 'BUSINESS',
+      },
+    });
+    await insertDirect({
+      ...cashEvidence,
+      organizationId: otherOrg.id,
+      customerId: otherCustomer.id,
+      membershipId: otherMembership.id,
+      evidenceKey: 'CASH:cashreceipt77',
+    });
+    await insertDirect({
+      ...transferEvidence,
+      organizationId: otherOrg.id,
+      customerId: otherCustomer.id,
+      membershipId: otherMembership.id,
+      evidenceKey: 'BANK:9:accounta1:txref88',
+    });
+  });
+
+  it('allocates exact verified funds across invoices, serializes competing commands, and reverses immutably', async () => {
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"payment-test","version":"1"}',
+    );
+    const invoiceFor = async () => {
+      const o = await order('PRODUCE', '5');
+      const posted = await post(o, body(o, 'PRODUCE', '2'));
+      return (
+        await invoices.issue(
+          context,
+          posted.receipt.fulfilment.id,
+          randomUUID(),
+        )
+      ).invoice;
+    };
+    const firstInvoice = await invoiceFor();
+    const secondInvoice = await invoiceFor();
+    const payment = await payments.record(
+      staff,
+      {
+        customerId,
+        amount: '6.00',
+        method: 'BANK_TRANSFER',
+        receivingAccount: 'main-account',
+        bankTransferReference: 'allocation-bank-1',
+      },
+      randomUUID(),
+    );
+    await expect(
+      payments.allocate(
+        manager,
+        payment.payment.id,
+        {
+          allocations: [{ invoiceId: firstInvoice.id, amount: '1.00' }],
+        },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'PAYMENT_NOT_VERIFIED' });
+    await payments.verify(manager, payment.payment.id, randomUUID());
+    const allocationKey = randomUUID();
+    const allocationInput = {
+      allocations: [
+        { invoiceId: firstInvoice.id, amount: '2.00' },
+        { invoiceId: secondInvoice.id, amount: '2.00' },
+      ],
+    };
+    const allocated = await payments.allocate(
+      manager,
+      payment.payment.id,
+      allocationInput,
+      allocationKey,
+    );
+    expect(allocated.payment.allocatedAmount).toBe('4.00');
+    expect(allocated.payment.unallocatedAmount).toBe('2.00');
+    await expect(
+      payments.allocate(
+        manager,
+        payment.payment.id,
+        { allocations: [{ invoiceId: firstInvoice.id, amount: '2.01' }] },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'PAYMENT_FUNDS_EXCEEDED' });
+    await payments.allocate(
+      manager,
+      payment.payment.id,
+      allocationInput,
+      allocationKey,
+    );
+    await expect(
+      payments.allocate(
+        manager,
+        payment.payment.id,
+        {
+          allocations: [{ invoiceId: firstInvoice.id, amount: '1.00' }],
+        },
+        allocationKey,
+      ),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+    expect(
+      (await payments.invoiceBalance(manager, firstInvoice.id))
+        .outstandingAmount,
+    ).toBe('2.00');
+
+    const contenderA = await payments.record(
+      staff,
+      {
+        customerId,
+        amount: '2.00',
+        method: 'CASH',
+        cashReceiptNumber: 'contender-a',
+      },
+      randomUUID(),
+    );
+    const contenderB = await payments.record(
+      staff,
+      {
+        customerId,
+        amount: '2.00',
+        method: 'CASH',
+        cashReceiptNumber: 'contender-b',
+      },
+      randomUUID(),
+    );
+    await payments.verify(manager, contenderA.payment.id, randomUUID());
+    await payments.verify(manager, contenderB.payment.id, randomUUID());
+    const outcomes = await Promise.allSettled([
+      payments.allocate(
+        manager,
+        contenderA.payment.id,
+        { allocations: [{ invoiceId: firstInvoice.id, amount: '2.00' }] },
+        randomUUID(),
+      ),
+      payments.allocate(
+        manager,
+        contenderB.payment.id,
+        { allocations: [{ invoiceId: firstInvoice.id, amount: '2.00' }] },
+        randomUUID(),
+      ),
+    ]);
+    expect(
+      outcomes.filter((outcome) => outcome.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      outcomes.filter((outcome) => outcome.status === 'rejected'),
+    ).toHaveLength(1);
+    expect(
+      (await payments.invoiceBalance(manager, firstInvoice.id))
+        .outstandingAmount,
+    ).toBe('0.00');
+    const winner = outcomes.find((outcome) => outcome.status === 'fulfilled')!;
+    if (winner.status !== 'fulfilled')
+      throw new Error('Expected one allocation winner');
+    const historyBefore = await prisma.paymentAllocation.count({
+      where: {
+        organizationId: context.organizationId,
+        paymentId: winner.value.payment.id,
+      },
+    });
+    const reversed = await payments.reverse(
+      context,
+      winner.value.payment.id,
+      { reason: 'Payment recorded in error' },
+      randomUUID(),
+    );
+    expect(reversed.payment.status).toBe('REVERSED');
+    expect(
+      reversed.payment.allocations.every(
+        (allocation) => allocation.activeAmount === '0.00',
+      ),
+    ).toBe(true);
+    expect(reversed.payment.events.map((event) => event.type)).toContain(
+      'REVERSED',
+    );
+    expect(
+      await prisma.paymentAllocation.count({
+        where: {
+          organizationId: context.organizationId,
+          paymentId: winner.value.payment.id,
+        },
+      }),
+    ).toBe(historyBefore);
+    expect(
+      (await payments.invoiceBalance(manager, firstInvoice.id))
+        .outstandingAmount,
+    ).toBe('2.00');
+    await expect(
+      payments.allocate(
+        manager,
+        winner.value.payment.id,
+        { allocations: [{ invoiceId: firstInvoice.id, amount: '1.00' }] },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'PAYMENT_REVERSED' });
+  });
+
+  it('rejects allocation to a non-issued invoice at the PostgreSQL boundary and preserves invoice status', async () => {
+    vi.stubEnv('M6_INVOICE_ISSUANCE_ENABLED', 'true');
+    vi.stubEnv('M6_INVOICE_TAX_POLICY_READY', 'true');
+    vi.stubEnv(
+      'M6_INVOICE_TAX_POLICY_CONFIG',
+      '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"payment-state-test","version":"1"}',
+    );
+    const orderRecord = await order('PRODUCE', '5');
+    const posted = await post(orderRecord, body(orderRecord, 'PRODUCE', '2'));
+    const invoice = (
+      await invoices.issue(context, posted.receipt.fulfilment.id, randomUUID())
+    ).invoice;
+
+    // InvoiceState currently contains only ISSUED. Add a disposable test value
+    // so the payment trigger is exercised against a genuinely ineligible row.
+    await prisma.$executeRawUnsafe(
+      `ALTER TYPE "InvoiceState" ADD VALUE IF NOT EXISTS 'DRAFT'`,
+    );
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "invoices" DISABLE TRIGGER invoices_immutable',
+    );
+    try {
+      await prisma.$executeRaw`UPDATE "invoices" SET "status" = 'DRAFT' WHERE "organizationId" = ${context.organizationId}::uuid AND "id" = ${invoice.id}::uuid`;
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "invoices" ENABLE TRIGGER invoices_immutable',
+      );
+    }
+
+    const paymentId = randomUUID();
+    const evidenceKey = `CASH:state${randomUUID().replaceAll('-', '')}`;
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`
+          INSERT INTO "payments" (
+            "id", "organizationId", "customerId", "amount", "currency", "method",
+            "cashReceiptNumber", "evidenceKey", "recordedByMembershipId"
+          ) VALUES (
+            ${paymentId}::uuid, ${context.organizationId}::uuid, ${customerId}::uuid,
+            1.00, 'JMD', 'CASH', ${evidenceKey.slice(5)}, ${evidenceKey}, ${context.membershipId}::uuid
+          )
+        `;
+        await tx.$executeRaw`
+          INSERT INTO "payment_lifecycle_events" (
+            "id", "organizationId", "paymentId", "type", "actorMembershipId", "selfVerification"
+          ) VALUES
+            (${randomUUID()}::uuid, ${context.organizationId}::uuid, ${paymentId}::uuid, 'RECORDED', ${context.membershipId}::uuid, false),
+            (${randomUUID()}::uuid, ${context.organizationId}::uuid, ${paymentId}::uuid, 'VERIFIED', ${context.membershipId}::uuid, true)
+        `;
+        await tx.$executeRaw`
+          INSERT INTO "payment_allocations" (
+            "id", "organizationId", "paymentId", "invoiceId", "customerId", "currency", "amount", "allocatedByMembershipId"
+          ) VALUES (
+            ${randomUUID()}::uuid, ${context.organizationId}::uuid, ${paymentId}::uuid,
+            ${invoice.id}::uuid, ${customerId}::uuid, 'JMD', 1.00, ${context.membershipId}::uuid
+          )
+        `;
+      }),
+    ).rejects.toThrow(/allocations require an issued invoice/);
+    expect(
+      await prisma.paymentAllocation.count({
+        where: { organizationId: context.organizationId, paymentId },
+      }),
+    ).toBe(0);
+    await expect(
+      prisma.$executeRaw`UPDATE "invoices" SET "status" = 'ISSUED' WHERE "organizationId" = ${context.organizationId}::uuid AND "id" = ${invoice.id}::uuid`,
+    ).rejects.toThrow();
+
+    const maximum = '99999999999999999999999999999999.99';
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "invoices" DISABLE TRIGGER invoices_immutable',
+    );
+    try {
+      await prisma.$executeRaw`
+        UPDATE "invoices" SET "status" = 'ISSUED', "grossAmount" = ${maximum}::numeric
+        WHERE "organizationId" = ${context.organizationId}::uuid AND "id" = ${invoice.id}::uuid
+      `;
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "invoices" ENABLE TRIGGER invoices_immutable',
+      );
+    }
+    const maximumPaymentId = randomUUID();
+    const maximumEvidence = `CASH:max${randomUUID().replaceAll('-', '')}`;
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        INSERT INTO "payments" (
+          "id", "organizationId", "customerId", "amount", "currency", "method",
+          "cashReceiptNumber", "evidenceKey", "recordedByMembershipId"
+        ) VALUES (
+          ${maximumPaymentId}::uuid, ${context.organizationId}::uuid, ${customerId}::uuid,
+          ${maximum}::numeric, 'JMD', 'CASH', ${maximumEvidence.slice(5)}, ${maximumEvidence}, ${context.membershipId}::uuid
+        )
+      `;
+      await tx.$executeRaw`
+        INSERT INTO "payment_lifecycle_events" (
+          "id", "organizationId", "paymentId", "type", "actorMembershipId", "selfVerification"
+        ) VALUES
+          (${randomUUID()}::uuid, ${context.organizationId}::uuid, ${maximumPaymentId}::uuid, 'RECORDED', ${context.membershipId}::uuid, false),
+          (${randomUUID()}::uuid, ${context.organizationId}::uuid, ${maximumPaymentId}::uuid, 'VERIFIED', ${context.membershipId}::uuid, true)
+      `;
+    });
+    await payments.allocate(
+      context,
+      maximumPaymentId,
+      { allocations: [{ invoiceId: invoice.id, amount: maximum }] },
+      randomUUID(),
+    );
+    expect(await payments.invoiceBalance(manager, invoice.id)).toMatchObject({
+      grossAmount: maximum,
+      allocatedAmount: maximum,
+      outstandingAmount: '0.00',
+    });
+    await payments.reverse(
+      context,
+      maximumPaymentId,
+      { reason: 'Maximum capacity reversal' },
+      randomUUID(),
+    );
+    expect(
+      (await payments.invoiceBalance(manager, invoice.id)).outstandingAmount,
+    ).toBe(maximum);
+  });
+
+  it('keeps payment writes tenant-scoped and rolls back if a later command-receipt insert fails', async () => {
+    const foreignOrg = await prisma.organization.create({
+      data: { name: 'Foreign payments', slug: `foreign-${randomUUID()}` },
+    });
+    const foreignUser = await prisma.user.create({
+      data: { email: `${randomUUID()}@example.com`, passwordHash: 'unused' },
+    });
+    const foreignMembership = await prisma.organizationMembership.create({
+      data: {
+        organizationId: foreignOrg.id,
+        userId: foreignUser.id,
+        role: 'ADMIN',
+      },
+    });
+    const foreignCustomer = await prisma.customer.create({
+      data: {
+        organizationId: foreignOrg.id,
+        code: 'CUS-X',
+        name: 'Foreign',
+        type: 'BUSINESS',
+      },
+    });
+    const foreignPayment = await payments.record(
+      new OrganizationContext(
+        foreignOrg.id,
+        foreignMembership.id,
+        foreignUser.id,
+        'ADMIN',
+      ),
+      {
+        customerId: foreignCustomer.id,
+        amount: '7.00',
+        method: 'BANK_TRANSFER',
+        receivingAccount: 'main-account',
+        bankTransferReference: 'foreign-bank-1',
+      },
+      randomUUID(),
+    );
+    await expect(
+      payments.get(context, foreignPayment.payment.id),
+    ).rejects.toMatchObject({ code: 'PAYMENT_NOT_FOUND' });
+
+    await prisma.$executeRawUnsafe(
+      `CREATE FUNCTION test_reject_payment_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected payment receipt failure'; END; $$`,
+    );
+    await prisma.$executeRawUnsafe(
+      `CREATE TRIGGER test_reject_payment_receipt BEFORE INSERT ON payment_command_receipts FOR EACH ROW EXECUTE FUNCTION test_reject_payment_receipt()`,
+    );
+    const before = await prisma.payment.count({
+      where: { organizationId: context.organizationId },
+    });
+    try {
+      await expect(
+        payments.record(
+          context,
+          {
+            customerId,
+            amount: '9.00',
+            method: 'CASH',
+            cashReceiptNumber: 'rollback-receipt',
+          },
+          randomUUID(),
+        ),
+      ).rejects.toThrow('injected payment receipt failure');
+      expect(
+        await prisma.payment.count({
+          where: { organizationId: context.organizationId },
+        }),
+      ).toBe(before);
+      expect(
+        await prisma.paymentLifecycleEvent.count({
+          where: { organizationId: context.organizationId },
+        }),
+      ).toBe(0);
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'DROP TRIGGER test_reject_payment_receipt ON payment_command_receipts',
+      );
+      await prisma.$executeRawUnsafe(
+        'DROP FUNCTION test_reject_payment_receipt()',
+      );
+    }
+  });
+
+  it('serializes verification against reversal and prevents reversal-of-reversal', async () => {
+    const pending = await payments.record(
+      staff,
+      {
+        customerId,
+        amount: '4.00',
+        method: 'BANK_TRANSFER',
+        receivingAccount: 'main-account',
+        bankTransferReference: 'verification-reversal-race',
+      },
+      randomUUID(),
+    );
+    const outcomes = await Promise.allSettled([
+      payments.verify(context, pending.payment.id, randomUUID()),
+      payments.reverse(
+        context,
+        pending.payment.id,
+        { reason: 'Concurrent correction' },
+        randomUUID(),
+      ),
+    ]);
+    expect(
+      outcomes.filter((outcome) => outcome.status === 'fulfilled').length,
+    ).toBeGreaterThanOrEqual(1);
+    const final = await payments.get(context, pending.payment.id);
+    expect(final.status).toBe('REVERSED');
+    expect(
+      final.events.filter((event) => event.type === 'VERIFIED'),
+    ).toHaveLength(outcomes[0]?.status === 'fulfilled' ? 1 : 0);
+    expect(
+      final.events.filter((event) => event.type === 'REVERSED'),
+    ).toHaveLength(1);
+    await expect(
+      payments.reverse(
+        context,
+        pending.payment.id,
+        { reason: 'Second correction' },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ code: 'PAYMENT_ALREADY_REVERSED' });
+    await expect(
+      payments.verify(context, pending.payment.id, randomUUID()),
+    ).rejects.toMatchObject({ code: 'PAYMENT_REVERSED' });
   });
 });

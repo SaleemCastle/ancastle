@@ -18,7 +18,12 @@ type FlockPosition = { farmId: string; flockId: string };
 export interface MutationLockPlan {
   parent?: 'KEY SHARE' | 'UPDATE';
   command?: { farmId: string; operation: 'POST' | 'REVERSE'; key: string };
-  financialCommand?: { operation: 'ISSUE_INVOICE'; key: string };
+  financialCommand?: {
+    operation: 'ISSUE_INVOICE' | 'PAYMENT_LEDGER';
+    key: string;
+  };
+  paymentIds?: readonly string[];
+  invoiceIds?: readonly string[];
   orderId?: string;
   definitions?: Partial<Record<DefinitionTable, readonly DefinitionLock[]>>;
   flocks?: readonly FlockPosition[];
@@ -54,6 +59,8 @@ function normalize(organizationId: string, plan: MutationLockPlan) {
     financialCommand: plan.financialCommand
       ? `${plan.financialCommand.operation}:${canonical(plan.financialCommand.key)}`
       : undefined,
+    paymentIds: new Set((plan.paymentIds ?? []).map(canonical)),
+    invoiceIds: new Set((plan.invoiceIds ?? []).map(canonical)),
     orderId: plan.orderId ? canonical(plan.orderId) : undefined,
     definitions,
     flocks: new Set((plan.flocks ?? []).map(flockKey)),
@@ -74,6 +81,8 @@ function covers(held: HeldLocks, next: HeldLocks) {
     (!next.command || next.command === held.command) &&
     (!next.financialCommand ||
       next.financialCommand === held.financialCommand) &&
+    [...next.paymentIds].every((id) => held.paymentIds.has(id)) &&
+    [...next.invoiceIds].every((id) => held.invoiceIds.has(id)) &&
     (!next.orderId || next.orderId === held.orderId) &&
     [...next.definitions].every(
       ([key, mode]) =>
@@ -125,6 +134,16 @@ async function acquireLocks(tx: Prisma.TransactionClient, locks: HeldLocks) {
   if (locks.financialCommand) {
     await tx.$executeRaw(
       Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${locks.organizationId}), hashtext(${`financial:${locks.financialCommand}`}))`,
+    );
+  }
+  for (const id of [...locks.paymentIds].sort()) {
+    await tx.$queryRaw(
+      Prisma.sql`SELECT "id" FROM "payments" WHERE "organizationId" = ${locks.organizationId}::uuid AND "id" = ${id}::uuid FOR UPDATE`,
+    );
+  }
+  for (const id of [...locks.invoiceIds].sort()) {
+    await tx.$queryRaw(
+      Prisma.sql`SELECT "id" FROM "invoices" WHERE "organizationId" = ${locks.organizationId}::uuid AND "id" = ${id}::uuid FOR UPDATE`,
     );
   }
   if (locks.orderId) {
