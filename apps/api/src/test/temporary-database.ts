@@ -9,7 +9,7 @@ import { PrismaClient } from '../generated/prisma/client.js';
  * triggers. Only the randomly named database owned by this helper is removed.
  */
 export async function temporaryDatabase(
-  options: { throughMigration?: string } = {},
+  options: { throughMigration?: string; applyMigrations?: boolean } = {},
 ) {
   const admin = new PrismaService();
   const databaseName = `poultry_test_${randomUUID().replaceAll('-', '')}`;
@@ -42,6 +42,7 @@ export async function temporaryDatabase(
         await readdir(migrations, { withFileTypes: true })
       ).sort((a, b) => a.name.localeCompare(b.name))) {
         if (
+          options.applyMigrations !== false &&
           entry.isDirectory() &&
           (!options.throughMigration || entry.name <= options.throughMigration)
         ) {

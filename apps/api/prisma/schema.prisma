@@ -818,6 +818,8 @@ model Invoice {
   @@unique([organizationId, fulfilmentId])
   @@unique([organizationId, fulfilmentId, id])
   @@index([organizationId, customerId, issuedAt])
+  @@index([organizationId, dueAt, id])
+  @@index([organizationId, customerId, dueAt, id])
   @@map("invoices")
 }
 
@@ -975,6 +977,7 @@ model PaymentAllocation {
   @@unique([organizationId, paymentId, invoiceId, id])
   @@index([organizationId, paymentId, createdAt, id])
   @@index([organizationId, invoiceId, createdAt, id])
+  @@index([organizationId, customerId, createdAt, id])
   @@map("payment_allocations")
 }
 

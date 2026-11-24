@@ -1,6 +1,24 @@
 import { Prisma } from '../../generated/prisma/client.js';
 
 const ExactDecimal = Prisma.Decimal.clone({ precision: 40 });
+const BUSINESS_TIME_ZONE = 'America/Jamaica';
+
+export function businessCalendarDate(at: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(at);
+  const part = (type: string) =>
+    parts.find((item) => item.type === type)!.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function dateOnlyAsUtc(date: string): Date {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year!, month! - 1, day!));
+}
 
 export function invoiceLineAmount(
   quantity: string,
@@ -30,13 +48,7 @@ export function calculateInvoiceDueDate(
   ) {
     throw new Error('Valid credit payment terms are required');
   }
-  const result = new Date(
-    Date.UTC(
-      issueDate.getUTCFullYear(),
-      issueDate.getUTCMonth(),
-      issueDate.getUTCDate(),
-    ),
-  );
+  const result = dateOnlyAsUtc(businessCalendarDate(issueDate));
   result.setUTCDate(
     result.getUTCDate() + (saleType === 'CREDIT' ? creditTermDays! : 0),
   );

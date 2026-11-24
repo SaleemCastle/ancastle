@@ -94,6 +94,31 @@ describe('AuthorizationService', () => {
     ).toBe(false);
   });
 
+  it('limits receivables and statement visibility to OWNER, ADMIN and MANAGER', () => {
+    for (const role of [
+      MembershipRole.OWNER,
+      MembershipRole.ADMIN,
+      MembershipRole.MANAGER,
+    ]) {
+      expect(service.hasPermission(role, Permission.RECEIVABLE_READ)).toBe(
+        true,
+      );
+      expect(service.hasPermission(role, Permission.STATEMENT_READ)).toBe(true);
+    }
+    expect(
+      service.hasPermission(MembershipRole.STAFF, Permission.INVOICE_READ),
+    ).toBe(true);
+    expect(
+      service.hasPermission(MembershipRole.STAFF, Permission.PAYMENT_READ),
+    ).toBe(true);
+    expect(
+      service.hasPermission(MembershipRole.STAFF, Permission.RECEIVABLE_READ),
+    ).toBe(false);
+    expect(
+      service.hasPermission(MembershipRole.STAFF, Permission.STATEMENT_READ),
+    ).toBe(false);
+  });
+
   it('limits staff to basic organization and farm access', () => {
     expect(
       service.hasPermission(MembershipRole.STAFF, Permission.ORGANIZATION_READ),

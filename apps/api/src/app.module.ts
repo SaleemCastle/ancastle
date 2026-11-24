@@ -21,6 +21,7 @@ import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module.js
 import { FulfilmentsModule } from './modules/fulfilments/fulfilments.module.js';
 import { InvoicesModule } from './modules/invoices/invoices.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
+import { ReceivablesModule } from './modules/receivables/receivables.module.js';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { PaymentsModule } from './modules/payments/payments.module.js';
     FulfilmentsModule,
     InvoicesModule,
     PaymentsModule,
+    ReceivablesModule,
   ],
 })
 export class AppModule {}
