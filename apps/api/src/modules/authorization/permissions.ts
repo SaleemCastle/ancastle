@@ -9,6 +9,8 @@ export const Permission = {
   PAYMENT_VERIFY: 'payment:verify',
   PAYMENT_ALLOCATE: 'payment:allocate',
   PAYMENT_REVERSE: 'payment:reverse',
+  RECEIVABLE_READ: 'receivable:read',
+  STATEMENT_READ: 'statement:read',
   SALES_PRODUCT_READ: 'sales-product:read',
   SALES_PRODUCT_MANAGE: 'sales-product:manage',
   SALES_PRODUCT_SOURCE_MANAGE: 'sales-product-source:manage',

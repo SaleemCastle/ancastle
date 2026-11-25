@@ -157,6 +157,7 @@ export * from './organization-farm.js';
 export * from './organization-member.js';
 export * from './invoice.js';
 export * from './payment.js';
+export * from './receivables.js';
 
 export * from './application-context.js';
 export * from './flock.js';

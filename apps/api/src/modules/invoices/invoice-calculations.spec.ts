@@ -42,6 +42,23 @@ describe('invoice calculations', () => {
       '2026-03-02T00:00:00.000Z',
     );
   });
+  it('uses the Jamaica issue calendar date across the UTC midnight boundary', () => {
+    const beforeJamaicaMidnight = new Date('2026-02-28T04:59:59.999Z');
+    const atJamaicaMidnight = new Date('2026-02-28T05:00:00.000Z');
+    expect(
+      calculateInvoiceDueDate(
+        beforeJamaicaMidnight,
+        'CASH',
+        null,
+      ).toISOString(),
+    ).toBe('2026-02-27T00:00:00.000Z');
+    expect(
+      calculateInvoiceDueDate(atJamaicaMidnight, 'CASH', null).toISOString(),
+    ).toBe('2026-02-28T00:00:00.000Z');
+    expect(
+      calculateInvoiceDueDate(beforeJamaicaMidnight, 'CREDIT', 1).toISOString(),
+    ).toBe('2026-02-28T00:00:00.000Z');
+  });
   it('rejects missing and invalid credit term snapshots', () => {
     expect(() => calculateInvoiceDueDate(new Date(), 'CREDIT', null)).toThrow(
       /terms/,
