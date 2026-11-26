@@ -8,6 +8,8 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { BusinessException } from '../../common/exceptions/business.exception.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import type { OrganizationContext } from '../authorization/organization-context.js';
+import type { FarmContext } from '../authorization/farm-context.js';
+import { FarmAccessService } from '../authorization/farm-access.service.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { Permission } from '../authorization/permissions.js';
 import { InvoiceActivationService } from './invoice-activation.service.js';
@@ -51,6 +53,8 @@ function projectInvoice(record: InvoiceRecord): Invoice {
     paymentTermsSnapshot: terms,
     grossAmount: record.grossAmount.toFixed(2),
     taxTreatmentStatus: record.taxTreatmentStatus,
+    taxPolicyReference: record.taxPolicyReference,
+    taxPolicyVersion: record.taxPolicyVersion,
     status: record.status,
     lines: record.lines.map((line) => ({
       id: line.id,
@@ -72,6 +76,7 @@ export class InvoicesService {
     private readonly prisma: PrismaService,
     private readonly authorization: AuthorizationService,
     private readonly activation: InvoiceActivationService,
+    private readonly farmAccess: FarmAccessService,
   ) {}
 
   async issue(
@@ -123,7 +128,7 @@ export class InvoicesService {
               },
             },
           },
-          select: { orderId: true },
+          select: { orderId: true, farmId: true },
         });
         if (!discovered)
           throw fault(
@@ -131,10 +136,12 @@ export class InvoicesService {
             'Committed posting fulfilment was not found',
             404,
           );
+        await this.farmAccess.resolve(context, discovered.farmId);
         await lockMutation(tx, context, {
           financialCommand: { operation: 'ISSUE_INVOICE', key },
           orderId: discovered.orderId,
         });
+        await this.farmAccess.resolve(context, discovered.farmId, tx);
         await this.authorize(tx, context, Permission.INVOICE_ISSUE);
         const raced = await tx.invoiceIssueCommand.findUnique({
           where: {
@@ -344,15 +351,69 @@ export class InvoicesService {
     query: InvoiceQuery,
   ): Promise<InvoiceListResponse> {
     await this.authorize(this.prisma, context, Permission.INVOICE_READ);
-    const where = {
+    const where: Prisma.InvoiceWhereInput = {
       organizationId: context.organizationId,
       customerId: query.customerId,
+      ...(query.issueFrom || query.issueTo
+        ? {
+            issuedAt: {
+              ...(query.issueFrom
+                ? { gte: this.jamaicaStart(query.issueFrom) }
+                : {}),
+              ...(query.issueTo
+                ? { lt: this.jamaicaStart(this.nextDate(query.issueTo)) }
+                : {}),
+            },
+          }
+        : {}),
+      ...(query.dueFrom || query.dueTo
+        ? {
+            dueAt: {
+              ...(query.dueFrom
+                ? { gte: new Date(`${query.dueFrom}T00:00:00.000Z`) }
+                : {}),
+              ...(query.dueTo
+                ? { lte: new Date(`${query.dueTo}T00:00:00.000Z`) }
+                : {}),
+            },
+          }
+        : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                invoiceNumber: { contains: query.search, mode: 'insensitive' },
+              },
+              {
+                customerBillingSnapshot: {
+                  path: ['name'],
+                  string_contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+              {
+                customerBillingSnapshot: {
+                  path: ['code'],
+                  string_contains: query.search,
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          }
+        : {}),
     };
+    const sortField = {
+      issuedAt: 'issuedAt',
+      dueAt: 'dueAt',
+      invoiceNumber: 'invoiceNumber',
+      grossAmount: 'grossAmount',
+    }[query.sortBy ?? 'issuedAt'];
+    const direction = query.sortDirection ?? 'desc';
     const [records, totalItems] = await this.prisma.$transaction(
       [
         this.prisma.invoice.findMany({
           where,
-          orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
+          orderBy: [{ [sortField]: direction }, { id: direction }],
           skip: (query.page - 1) * query.pageSize,
           take: query.pageSize,
           include: includeInvoice,
@@ -372,6 +433,100 @@ export class InvoicesService {
     };
   }
 
+  async eligibleFulfilments(context: OrganizationContext, farm: FarmContext) {
+    await this.authorize(this.prisma, context, Permission.INVOICE_ISSUE);
+    await this.authorize(this.prisma, context, Permission.ORDER_READ);
+    await this.authorize(this.prisma, context, Permission.FULFILMENT_READ);
+    const rows = await this.prisma.fulfilment.findMany({
+      where: {
+        organizationId: context.organizationId,
+        farmId: farm.farmId,
+        kind: 'POSTING',
+        commands: {
+          some: { organizationId: context.organizationId, operation: 'POST' },
+        },
+        invoice: null,
+        reversals: { none: {} },
+      },
+      include: { order: true, lines: { include: { orderLine: true } } },
+      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+      take: 100,
+    });
+    return {
+      data: rows
+        .filter(
+          (row) =>
+            row.order.saleType === 'CASH' || row.order.creditTermDays !== null,
+        )
+        .map((row) => ({
+          id: row.id,
+          code: row.code,
+          orderId: row.orderId,
+          customerName: row.order.customerName,
+          occurredAt: row.occurredAt.toISOString(),
+          grossAmount: invoiceGrossAmount(
+            row.lines.map((line) =>
+              invoiceLineAmount(
+                line.quantity.toString(),
+                line.orderLine.unitPrice.toString(),
+              ),
+            ),
+          ).toFixed(2),
+        })),
+    };
+  }
+
+  issuanceStatus() {
+    try {
+      this.activation.assertEnabled();
+      return { enabled: true, message: null };
+    } catch {
+      return {
+        enabled: false,
+        message:
+          'Invoice issuance is not enabled for this deployment. No invoice will be issued until the finance feature and approved tax policy are activated.',
+      };
+    }
+  }
+
+  private nextDate(date: string): string {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(Date.UTC(year!, month! - 1, day! + 1))
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  private jamaicaStart(date: string): Date {
+    const [year, month, day] = date.split('-').map(Number);
+    const target = Date.UTC(year!, month! - 1, day!);
+    let guess = target;
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Jamaica',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+    for (let i = 0; i < 3; i += 1) {
+      const parts = formatter.formatToParts(new Date(guess));
+      const part = (type: string) =>
+        Number(parts.find((item) => item.type === type)!.value);
+      const localAsUtc = Date.UTC(
+        part('year'),
+        part('month') - 1,
+        part('day'),
+        part('hour'),
+        part('minute'),
+        part('second'),
+      );
+      guess = target - (localAsUtc - guess);
+    }
+    return new Date(guess);
+  }
+
   async get(context: OrganizationContext, id: string): Promise<Invoice> {
     await this.authorize(this.prisma, context, Permission.INVOICE_READ);
     const record = await this.prisma.invoice.findFirst({
@@ -380,6 +535,19 @@ export class InvoicesService {
     });
     if (!record) throw fault('INVOICE_NOT_FOUND', 'Invoice was not found', 404);
     return projectInvoice(record);
+  }
+
+  async customers(context: OrganizationContext) {
+    await this.authorize(this.prisma, context, Permission.INVOICE_READ);
+    const rows = await this.prisma.$queryRaw<
+      { customerId: string; customerName: string }[]
+    >`
+      SELECT DISTINCT ON (i."customerId") i."customerId", i."customerBillingSnapshot"->>'name' AS "customerName"
+      FROM "invoices" i
+      WHERE i."organizationId" = ${context.organizationId}::uuid AND i."status" = 'ISSUED'
+      ORDER BY i."customerId", i."issuedAt" DESC, i.id DESC LIMIT 500
+    `;
+    return { data: rows };
   }
 
   async history(context: OrganizationContext, id: string) {

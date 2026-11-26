@@ -11,6 +11,14 @@ const queryBoolean = z.enum(['true', 'false']).transform((value) => value === 't
 export const receivableInvoiceQuerySchema = paginationQuerySchema
     .extend({
         customerId: id.optional(),
+        invoiceId: id.optional(),
+        search: z.string().trim().min(1).max(120).optional(),
+        issueFrom: date.optional(),
+        issueTo: date.optional(),
+        dueFrom: date.optional(),
+        dueTo: date.optional(),
+        sortBy: z.enum(['issuedAt', 'dueAt', 'invoiceNumber']).optional(),
+        sortDirection: z.enum(['asc', 'desc']).optional(),
         status: z.enum(['UNPAID', 'PARTIALLY_PAID', 'PAID']).optional(),
         overdue: queryBoolean.optional(),
         agingBucket: bucket.optional(),
@@ -42,6 +50,20 @@ export const statementQuerySchema = paginationQuerySchema
     });
 
 const money = aggregateMoney;
+export const receivableSummarySchema = z
+    .object({
+        data: z
+            .object({
+                currency: z.literal('JMD'),
+                asOfDate: date,
+                totalInvoiced: money,
+                totalOutstanding: money,
+                totalOverdue: money,
+                totalSettled: money,
+            })
+            .strict(),
+    })
+    .strict();
 const agingSchema = z
     .object({
         current: money,
@@ -57,6 +79,7 @@ export const receivableInvoiceSchema = z
         invoiceId: id,
         invoiceNumber: z.string().min(1),
         customerId: id,
+        customerName: z.string(),
         currency: z.literal('JMD'),
         issuedAt: z.iso.datetime(),
         dueAt: date,

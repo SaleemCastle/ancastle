@@ -8,6 +8,7 @@ import { ManagementApiError } from '@/lib/management/api';
 import { SessionError } from '@/components/session-error';
 import { LogoutForm } from '@/components/logout-form';
 import { ApplicationShell } from '@/components/application/shell';
+import { applicationHref } from '@/lib/application/selection';
 
 export type ManagementContext = Awaited<ReturnType<typeof requireApplicationContext>>;
 interface Props {
@@ -57,6 +58,16 @@ async function Content({ searchParams, activePath, title, render }: Props) {
                         <p className="mt-4" role="alert">
                             {error.message}
                         </p>
+                        <Link
+                            className="mt-3 inline-block underline"
+                            href={applicationHref(
+                                activePath,
+                                context.current?.organization.id,
+                                context.farm?.id,
+                            )}
+                        >
+                            Retry
+                        </Link>
                     </>
                 );
             else throw error;

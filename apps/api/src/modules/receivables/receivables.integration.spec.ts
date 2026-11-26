@@ -3,6 +3,7 @@ import { temporaryDatabase } from '../../test/temporary-database.js';
 import { AuthorizationService } from '../authorization/authorization.service.js';
 import { OrganizationContext } from '../authorization/organization-context.js';
 import { ReceivablesService } from './receivables.service.js';
+import { PaymentsService } from '../payments/payments.service.js';
 
 describe('M6-06 receivables and customer statements (PostgreSQL)', () => {
   it('derives outstanding, unapplied cash and historical statement cutoffs from ledger events', async () => {
@@ -338,6 +339,7 @@ describe('M6-06 receivables and customer statements (PostgreSQL)', () => {
         status: 'PARTIALLY_PAID',
         outstandingAmount: '75.00',
         overdue: true,
+        customerName: '',
       });
       expect(
         balances.data.find((row) => row.invoiceId === paidInvoice.id)?.status,
@@ -346,6 +348,42 @@ describe('M6-06 receivables and customer statements (PostgreSQL)', () => {
         balances.data.find((row) => row.invoiceId === maxInvoiceA.id)
           ?.outstandingAmount,
       ).toBe('99999999999999999999999999999999.99');
+      const filteredInvoices = await service.listInvoices(context, {
+        page: 1,
+        pageSize: 20,
+        customerId: customer.id,
+        search: 'INV-1',
+        issueFrom: '2026-11-01',
+        issueTo: '2026-11-01',
+        dueFrom: '2026-11-05',
+        dueTo: '2026-11-05',
+        sortBy: 'dueAt',
+        sortDirection: 'asc',
+        asOfDate: '2026-11-30',
+      });
+      expect(filteredInvoices.data.map((row) => row.invoiceId)).toEqual([
+        invoice.id,
+      ]);
+      const summary = await service.summary(context, '2026-11-30');
+      expect(summary.data).toMatchObject({
+        currency: 'JMD',
+        asOfDate: '2026-11-30',
+        totalSettled: '50.00',
+      });
+      expect(summary.data.totalInvoiced).toMatch(/^\d+\.\d{2}$/);
+      expect(summary.data.totalOutstanding).toMatch(/^\d+\.\d{2}$/);
+      expect(summary.data.totalOverdue).toMatch(/^\d+\.\d{2}$/);
+      const paymentDetails = await new PaymentsService(
+        database.prisma,
+        new AuthorizationService(),
+      ).invoiceAllocations(context, invoice.id);
+      expect(paymentDetails.data).toHaveLength(2);
+      expect(paymentDetails.data.map((row) => row.activeAmount).sort()).toEqual(
+        ['0.00', '25.00'],
+      );
+      expect(paymentDetails.data.some((row) => row.reversedAt !== null)).toBe(
+        true,
+      );
       const customerSummary = await service.getCustomer(
         context,
         customer.id,

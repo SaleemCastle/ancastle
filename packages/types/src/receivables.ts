@@ -21,6 +21,7 @@ export interface ReceivableInvoice {
     invoiceId: string;
     invoiceNumber: string;
     customerId: string;
+    customerName: string;
     currency: 'JMD';
     issuedAt: string;
     dueAt: string;
@@ -54,6 +55,19 @@ export interface ReceivableInvoiceListResponse {
         totalPages: number;
         asOfDate: string;
     };
+}
+
+export interface ReceivableSummary {
+    currency: 'JMD';
+    asOfDate: string;
+    totalInvoiced: string;
+    totalOutstanding: string;
+    totalOverdue: string;
+    totalSettled: string;
+}
+
+export interface ReceivableSummaryResponse {
+    data: ReceivableSummary;
 }
 
 export interface ReceivableCustomerListResponse {

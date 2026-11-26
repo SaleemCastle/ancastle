@@ -6,6 +6,7 @@ import type {
   ReceivableCustomerSummary,
   ReceivableInvoice,
   ReceivableInvoiceListResponse,
+  ReceivableSummaryResponse,
 } from '@ancastle/types';
 import type {
   ReceivableCustomerQuery,
@@ -27,6 +28,7 @@ type InvoiceBalanceRow = {
   invoiceId: string;
   invoiceNumber: string;
   customerId: string;
+  customerName: string;
   issuedAt: Date;
   dueAt: Date;
   grossAmount: string;
@@ -152,6 +154,49 @@ export class ReceivablesService {
     private readonly authorization: AuthorizationService,
   ) {}
 
+  async summary(
+    context: OrganizationContext,
+    requestedDate?: string,
+  ): Promise<ReceivableSummaryResponse> {
+    await this.authorize(context, Permission.RECEIVABLE_READ);
+    const asOfDate = requestedDate ?? jamaicaDate(new Date());
+    const rows = await this.prisma.$queryRaw<
+      {
+        invoiced: string | null;
+        outstanding: string | null;
+        overdue: string | null;
+        settled: string | null;
+      }[]
+    >`
+      WITH active_allocations AS (
+        SELECT pa."organizationId", pa."invoiceId", SUM(pa."amount") AS amount
+        FROM "payment_allocations" pa
+        WHERE pa."organizationId" = ${context.organizationId}::uuid
+          AND NOT EXISTS (SELECT 1 FROM "payment_allocation_reversals" r WHERE r."organizationId" = pa."organizationId" AND r."paymentId" = pa."paymentId" AND r."allocationId" = pa."id")
+        GROUP BY pa."organizationId", pa."invoiceId"
+      ), balances AS (
+        SELECT i."grossAmount" AS gross, i."grossAmount" - COALESCE(a.amount, 0) AS outstanding, i."dueAt"
+        FROM "invoices" i LEFT JOIN active_allocations a ON a."organizationId" = i."organizationId" AND a."invoiceId" = i."id"
+        WHERE i."organizationId" = ${context.organizationId}::uuid AND i."status" = 'ISSUED'
+      ) SELECT COALESCE(SUM(gross), 0)::text AS invoiced,
+        COALESCE(SUM(outstanding), 0)::text AS outstanding,
+        COALESCE(SUM(outstanding) FILTER (WHERE outstanding > 0 AND "dueAt" < ${asOfDate}::date), 0)::text AS overdue,
+        COALESCE(SUM(gross) FILTER (WHERE outstanding = 0), 0)::text AS settled
+        FROM balances
+    `;
+    const row = rows[0];
+    return {
+      data: {
+        currency: 'JMD',
+        asOfDate,
+        totalInvoiced: money(cents(row?.invoiced ?? '0.00')),
+        totalOutstanding: money(cents(row?.outstanding ?? '0.00')),
+        totalOverdue: money(cents(row?.overdue ?? '0.00')),
+        totalSettled: money(cents(row?.settled ?? '0.00')),
+      },
+    };
+  }
+
   async listInvoices(
     context: OrganizationContext,
     query: ReceivableInvoiceQuery,
@@ -162,6 +207,18 @@ export class ReceivablesService {
     const filterOverdue = query.overdue ?? null;
     const filterBucket = query.agingBucket ?? null;
     const customerId = query.customerId?.toLowerCase() ?? null;
+    const invoiceId = query.invoiceId?.toLowerCase() ?? null;
+    const search = query.search?.trim() ?? null;
+    const issueFrom = query.issueFrom
+      ? localMidnightUtc(query.issueFrom)
+      : null;
+    const issueTo = query.issueTo
+      ? localMidnightUtc(nextDate(query.issueTo))
+      : null;
+    const sortBy = query.sortBy ?? 'issuedAt';
+    const sortDirection = query.sortDirection ?? 'desc';
+    const dueFrom = query.dueFrom ?? null;
+    const dueTo = query.dueTo ?? null;
     return this.prisma.$transaction(
       async (tx) => {
         const records = await tx.$queryRaw<InvoiceBalanceRow[]>`
@@ -177,7 +234,7 @@ export class ReceivablesService {
             )
           GROUP BY pa."organizationId", pa."invoiceId"
         ), invoice_balances AS (
-          SELECT i."id" AS "invoiceId", i."invoiceNumber", i."customerId", i."issuedAt", i."dueAt",
+          SELECT i."id" AS "invoiceId", i."invoiceNumber", i."customerId", COALESCE(i."customerBillingSnapshot"->>'name', '') AS "customerName", i."issuedAt", i."dueAt",
             i."grossAmount"::text AS "grossAmount",
             COALESCE(a.amount, 0)::text AS "allocatedAmount",
             (i."grossAmount" - COALESCE(a.amount, 0))::text AS "outstandingAmount"
@@ -186,6 +243,12 @@ export class ReceivablesService {
           WHERE i."organizationId" = ${context.organizationId}::uuid
             AND i."status" = 'ISSUED'
             AND (${customerId}::uuid IS NULL OR i."customerId" = ${customerId}::uuid)
+            AND (${invoiceId}::uuid IS NULL OR i.id = ${invoiceId}::uuid)
+            AND (${issueFrom}::timestamptz IS NULL OR i."issuedAt" >= ${issueFrom}::timestamptz)
+            AND (${issueTo}::timestamptz IS NULL OR i."issuedAt" < ${issueTo}::timestamptz)
+            AND (${dueFrom}::date IS NULL OR i."dueAt" >= ${dueFrom}::date)
+            AND (${dueTo}::date IS NULL OR i."dueAt" <= ${dueTo}::date)
+            AND (${search}::text IS NULL OR i."invoiceNumber" ILIKE '%' || ${search}::text || '%' OR i."customerBillingSnapshot"->>'name' ILIKE '%' || ${search}::text || '%' OR i."customerBillingSnapshot"->>'code' ILIKE '%' || ${search}::text || '%')
         ), classified AS (
           SELECT b.*,
             GREATEST(0, (${asOfDate}::date - b."dueAt"))::int AS "daysOverdue",
@@ -194,7 +257,7 @@ export class ReceivablesService {
               ELSE 'PARTIALLY_PAID' END AS status
           FROM invoice_balances b
         )
-        SELECT "invoiceId", "invoiceNumber", "customerId", "issuedAt", "dueAt", "grossAmount", "allocatedAmount", "outstandingAmount"
+        SELECT "invoiceId", "invoiceNumber", "customerId", "customerName", "issuedAt", "dueAt", "grossAmount", "allocatedAmount", "outstandingAmount"
         FROM classified
         WHERE (${filterStatus}::text IS NULL OR status = ${filterStatus}::text)
           AND (${filterOverdue}::boolean IS NULL OR (("outstandingAmount"::numeric > 0 AND "daysOverdue" > 0) = ${filterOverdue}::boolean))
@@ -205,7 +268,14 @@ export class ReceivablesService {
               WHEN "daysOverdue" <= 60 THEN '31_TO_60'
               WHEN "daysOverdue" <= 90 THEN '61_TO_90'
               ELSE 'OVER_90' END = ${filterBucket}::text))
-        ORDER BY "issuedAt" DESC, "invoiceId" DESC
+        ORDER BY
+          CASE WHEN ${sortBy} = 'issuedAt' AND ${sortDirection} = 'asc' THEN "issuedAt" END ASC,
+          CASE WHEN ${sortBy} = 'issuedAt' AND ${sortDirection} = 'desc' THEN "issuedAt" END DESC,
+          CASE WHEN ${sortBy} = 'dueAt' AND ${sortDirection} = 'asc' THEN "dueAt" END ASC,
+          CASE WHEN ${sortBy} = 'dueAt' AND ${sortDirection} = 'desc' THEN "dueAt" END DESC,
+          CASE WHEN ${sortBy} = 'invoiceNumber' AND ${sortDirection} = 'asc' THEN "invoiceNumber" END ASC,
+          CASE WHEN ${sortBy} = 'invoiceNumber' AND ${sortDirection} = 'desc' THEN "invoiceNumber" END DESC,
+          "invoiceId" ${sortDirection === 'asc' ? Prisma.sql`ASC` : Prisma.sql`DESC`}
         LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}
       `;
         const countRows = await tx.$queryRaw<{ total: bigint }[]>`
@@ -221,6 +291,12 @@ export class ReceivablesService {
           FROM "invoices" i LEFT JOIN active_allocations a ON a."organizationId" = i."organizationId" AND a."invoiceId" = i."id"
           WHERE i."organizationId" = ${context.organizationId}::uuid AND i."status" = 'ISSUED'
             AND (${customerId}::uuid IS NULL OR i."customerId" = ${customerId}::uuid)
+            AND (${invoiceId}::uuid IS NULL OR i.id = ${invoiceId}::uuid)
+            AND (${issueFrom}::timestamptz IS NULL OR i."issuedAt" >= ${issueFrom}::timestamptz)
+            AND (${issueTo}::timestamptz IS NULL OR i."issuedAt" < ${issueTo}::timestamptz)
+            AND (${dueFrom}::date IS NULL OR i."dueAt" >= ${dueFrom}::date)
+            AND (${dueTo}::date IS NULL OR i."dueAt" <= ${dueTo}::date)
+            AND (${search}::text IS NULL OR i."invoiceNumber" ILIKE '%' || ${search}::text || '%' OR i."customerBillingSnapshot"->>'name' ILIKE '%' || ${search}::text || '%' OR i."customerBillingSnapshot"->>'code' ILIKE '%' || ${search}::text || '%')
         ) SELECT COUNT(*)::bigint AS total FROM classified
         WHERE (${filterStatus}::text IS NULL OR CASE WHEN outstanding = 0 THEN 'PAID' WHEN outstanding = "grossAmount" THEN 'UNPAID' ELSE 'PARTIALLY_PAID' END = ${filterStatus}::text)
           AND (${filterOverdue}::boolean IS NULL OR ((outstanding > 0 AND days > 0) = ${filterOverdue}::boolean))
@@ -488,6 +564,7 @@ export class ReceivablesService {
       invoiceId: record.invoiceId,
       invoiceNumber: record.invoiceNumber,
       customerId: record.customerId,
+      customerName: record.customerName,
       currency: 'JMD',
       issuedAt: record.issuedAt.toISOString(),
       dueAt: record.dueAt.toISOString().slice(0, 10),

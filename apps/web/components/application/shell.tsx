@@ -11,6 +11,7 @@ import {
     PackageOpen,
     Bird,
     ShoppingCart,
+    ReceiptText,
 } from 'lucide-react';
 import type { ApplicationOrganization } from '@ancastle/types';
 import { LogoutForm } from '@/components/logout-form';
@@ -249,6 +250,19 @@ export function ApplicationShell({
                             >
                                 <ShoppingCart className="size-4" aria-hidden="true" />
                                 Sales orders
+                            </Link>
+                        )}
+                        {current?.permissions.includes('invoice:read') && (
+                            <Link
+                                prefetch={false}
+                                aria-current={
+                                    activePath.startsWith('/app/invoices') ? 'page' : undefined
+                                }
+                                href={applicationHref('/app/invoices', current.organization.id)}
+                                className={navigationClass('/app/invoices')}
+                            >
+                                <ReceiptText className="size-4" aria-hidden="true" />
+                                Invoices
                             </Link>
                         )}
                         {current?.permissions.includes('customer:read') && (
