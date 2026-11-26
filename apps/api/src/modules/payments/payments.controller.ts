@@ -56,6 +56,16 @@ export class PaymentsController {
     return { data: await this.payments.invoiceBalance(context, invoiceId) };
   }
 
+  @Get('invoices/:invoiceId/allocations')
+  @RequirePermissions(Permission.PAYMENT_READ)
+  invoiceAllocations(
+    @CurrentOrganization() context: OrganizationContext,
+    @Param('invoiceId', new ZodValidationPipe(resourceIdSchema))
+    invoiceId: string,
+  ) {
+    return this.payments.invoiceAllocations(context, invoiceId);
+  }
+
   @Get(':paymentId')
   @RequirePermissions(Permission.PAYMENT_READ)
   async get(

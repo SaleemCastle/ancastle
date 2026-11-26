@@ -22,6 +22,11 @@ describe('receivables contracts', () => {
                 agingBucket: '31_TO_60',
                 asOfDate: '2026-11-23',
                 customerId: uuid1,
+                search: 'invoice',
+                issueFrom: '2026-11-01',
+                dueTo: '2026-11-30',
+                sortBy: 'dueAt',
+                sortDirection: 'asc',
             }),
         ).toMatchObject({ page: 2, pageSize: 50, overdue: true, agingBucket: '31_TO_60' });
         expect(receivableInvoiceQuerySchema.safeParse({ organizationId: uuid1 }).success).toBe(
@@ -56,6 +61,7 @@ describe('receivables contracts', () => {
                         invoiceId,
                         invoiceNumber: 'INV-00000001',
                         customerId,
+                        customerName: 'Customer',
                         currency: 'JMD',
                         issuedAt: '2026-11-01T12:00:00.000Z',
                         dueAt: '2026-11-01',

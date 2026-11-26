@@ -37,6 +37,16 @@ export class ReceivablesController {
     return this.receivables.listInvoices(context, query);
   }
 
+  @Get('receivables/summary')
+  @RequirePermissions(Permission.RECEIVABLE_READ)
+  summary(
+    @CurrentOrganization() context: OrganizationContext,
+    @Query(new ZodValidationPipe(receivableAsOfQuerySchema))
+    query: { asOfDate?: string },
+  ) {
+    return this.receivables.summary(context, query.asOfDate);
+  }
+
   @Get('receivables/customers')
   @RequirePermissions(Permission.RECEIVABLE_READ)
   listCustomers(

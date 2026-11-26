@@ -123,6 +123,24 @@ export const invoicePaymentBalanceSchema = z
         outstandingAmount: money,
     })
     .strict();
+export const invoicePaymentAllocationsSchema = z
+    .object({
+        data: z.array(
+            z
+                .object({
+                    allocationId: resourceId,
+                    paymentId: resourceId,
+                    amount: money,
+                    activeAmount: money,
+                    paymentMethod: paymentMethodSchema,
+                    paymentRecordedAt: z.iso.datetime(),
+                    allocatedAt: z.iso.datetime(),
+                    reversedAt: z.iso.datetime().nullable(),
+                })
+                .strict(),
+        ),
+    })
+    .strict();
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 export type AllocatePaymentInput = z.infer<typeof allocatePaymentSchema>;
 export type ReversePaymentInput = z.infer<typeof reversePaymentSchema>;

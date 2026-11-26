@@ -22,6 +22,10 @@ import {
   RequirePermissions,
 } from '../authorization/require-permissions.decorator.js';
 import { Permission } from '../authorization/permissions.js';
+import { CurrentFarm } from '../authorization/current-farm.decorator.js';
+import { FarmAccessGuard } from '../authorization/farm-access.guard.js';
+import { FarmParam } from '../authorization/farm-param.decorator.js';
+import type { FarmContext } from '../authorization/farm-context.js';
 import { InvoicesService } from './invoices.service.js';
 
 @Controller('organizations/:organizationId/invoices')
@@ -37,6 +41,18 @@ export class InvoicesController {
     @Query(new ZodValidationPipe(invoiceQuerySchema)) query: InvoiceQuery,
   ) {
     return this.invoices.list(context, query);
+  }
+
+  @Get('customers')
+  @RequirePermissions(Permission.INVOICE_READ)
+  customers(@CurrentOrganization() context: OrganizationContext) {
+    return this.invoices.customers(context);
+  }
+
+  @Get('issuance-status')
+  @RequirePermissions(Permission.INVOICE_ISSUE)
+  issuanceStatus() {
+    return { data: this.invoices.issuanceStatus() };
   }
 
   @Get(':invoiceId')
@@ -76,5 +92,20 @@ export class InvoicesController {
   ) {
     const result = await this.invoices.issue(context, fulfilmentId, key);
     return { data: result.invoice };
+  }
+
+  @Get('eligible-fulfilments/:farmId')
+  @UseGuards(FarmAccessGuard)
+  @FarmParam('farmId')
+  @RequirePermissions(
+    Permission.INVOICE_ISSUE,
+    Permission.ORDER_READ,
+    Permission.FULFILMENT_READ,
+  )
+  eligibleFulfilments(
+    @CurrentOrganization() context: OrganizationContext,
+    @CurrentFarm() farm: FarmContext,
+  ) {
+    return this.invoices.eligibleFulfilments(context, farm);
   }
 }

@@ -71,3 +71,14 @@ export interface InvoicePaymentBalance {
     allocatedAmount: string;
     outstandingAmount: string;
 }
+
+export interface InvoicePaymentAllocation {
+    allocationId: string;
+    paymentId: string;
+    amount: string;
+    activeAmount: string;
+    paymentMethod: PaymentMethod;
+    paymentRecordedAt: string;
+    allocatedAt: string;
+    reversedAt: string | null;
+}

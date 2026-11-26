@@ -650,6 +650,53 @@ export class PaymentsService {
     };
   }
 
+  async invoiceAllocations(context: OrganizationContext, invoiceId: string) {
+    await this.authorize(this.prisma, context, Permission.PAYMENT_READ);
+    const invoice = await this.prisma.invoice.findFirst({
+      where: {
+        organizationId: context.organizationId,
+        id: invoiceId.toLowerCase(),
+      },
+      select: { id: true },
+    });
+    if (!invoice)
+      throw fault('INVOICE_NOT_FOUND', 'Invoice was not found', 404);
+    const rows = await this.prisma.paymentAllocation.findMany({
+      where: { organizationId: context.organizationId, invoiceId: invoice.id },
+      include: {
+        payment: { select: { id: true, method: true, recordedAt: true } },
+        reversals: { select: { createdAt: true, amount: true } },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    return {
+      data: rows.map((row) => {
+        const reversed = row.reversals.reduce(
+          (sum, entry) => sum + moneyToCents(entry.amount),
+          0n,
+        );
+        const active = moneyToCents(row.amount) - reversed;
+        const reversedAt = row.reversals.length
+          ? row.reversals.reduce(
+              (latest, item) =>
+                item.createdAt > latest ? item.createdAt : latest,
+              row.reversals[0]!.createdAt,
+            )
+          : null;
+        return {
+          allocationId: row.id,
+          paymentId: row.payment.id,
+          amount: row.amount.toFixed(2),
+          activeAmount: centsToMoney(active),
+          paymentMethod: row.payment.method,
+          paymentRecordedAt: row.payment.recordedAt.toISOString(),
+          allocatedAt: row.createdAt.toISOString(),
+          reversedAt: reversedAt?.toISOString() ?? null,
+        };
+      }),
+    };
+  }
+
   private key(rawKey: string): string {
     return new ZodValidationPipe(idempotencyKeySchema)
       .transform(rawKey)

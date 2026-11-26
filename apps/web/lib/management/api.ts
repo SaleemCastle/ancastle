@@ -78,6 +78,14 @@ const messages: Record<string, string> = {
     FULFILMENT_ALREADY_REVERSED:
         'This posting has already been reversed. Refresh the order history.',
     FULFILMENT_REVERSAL_INVALID: 'Only a complete original posting can be reversed.',
+    INVOICE_ISSUANCE_DISABLED:
+        'Invoice issuance is disabled by this deployment. No invoice was created.',
+    INVOICE_TAX_POLICY_PENDING: 'An approved tax policy is required before invoice issuance.',
+    FULFILMENT_ALREADY_INVOICED:
+        'This fulfilment has already been invoiced. Refresh the list to see the invoice.',
+    FULFILMENT_REVERSED: 'This fulfilment was reversed and cannot be invoiced.',
+    PAYMENT_TERMS_REQUIRED:
+        'The source order does not have valid payment terms for invoice issuance.',
     ORDER_LINE_LIMIT_REACHED: 'This order has reached its line limit.',
     CUSTOMER_INACTIVE: 'Choose an active customer before saving this draft.',
     SALES_PRODUCT_INACTIVE:

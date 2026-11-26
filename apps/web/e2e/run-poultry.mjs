@@ -134,6 +134,13 @@ try {
             // This opt-in is accepted only by this runner, which always creates a disposable DB.
             SALES_FULFILMENT_ENABLED:
                 process.env.ANCASTLE_E2E_SALES_FULFILMENT === '1' ? 'true' : 'false',
+            // Invoice issuance is opt-in only for this runner's disposable database.
+            M6_INVOICE_ISSUANCE_ENABLED:
+                process.env.ANCASTLE_E2E_INVOICE_ISSUANCE === '1' ? 'true' : 'false',
+            M6_INVOICE_TAX_POLICY_READY:
+                process.env.ANCASTLE_E2E_INVOICE_ISSUANCE === '1' ? 'true' : 'false',
+            M6_INVOICE_TAX_POLICY_CONFIG:
+                '{"state":"APPROVED_POLICY_NOT_CALCULATED","reference":"e2e-policy","version":"test-1"}',
         },
     );
     servers.push(api);

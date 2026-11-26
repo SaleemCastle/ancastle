@@ -63,11 +63,12 @@ export class FarmAccessService {
   async resolve(
     context: OrganizationContext,
     selectedFarmId: unknown,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
   ): Promise<FarmContext> {
     const farmId = farmIdSchema.safeParse(selectedFarmId);
     if (!farmId.success) throw this.forbidden();
 
-    const farm = await this.prisma.farm.findFirst({
+    const farm = await client.farm.findFirst({
       where: { AND: [this.farmWhere(context), { id: farmId.data }] },
       select: { id: true, organizationId: true },
     });

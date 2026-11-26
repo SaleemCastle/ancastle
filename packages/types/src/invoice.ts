@@ -33,6 +33,8 @@ export interface Invoice {
     paymentTermsSnapshot: { saleType: 'CASH' | 'CREDIT'; creditTermDays: number | null };
     grossAmount: string;
     taxTreatmentStatus: InvoiceTaxTreatmentStatus;
+    taxPolicyReference: string | null;
+    taxPolicyVersion: string | null;
     status: InvoiceState;
     lines: InvoiceLine[];
     createdAt: string;
