@@ -28,6 +28,7 @@ import { Permission } from '../authorization/permissions.js';
 const fault = (code: string, message: string, status = 409) =>
   new BusinessException(code, message, status);
 const includePayment = {
+  customer: { select: { name: true } },
   events: { orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }] },
   allocations: {
     orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
@@ -72,7 +73,10 @@ function centsToMoney(value: bigint): string {
   return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, '0')}`;
 }
 
-function projectPayment(record: PaymentRecord): PaymentDto {
+function projectPayment(
+  record: PaymentRecord,
+  membershipId: string,
+): PaymentDto {
   const verified = record.events.find((event) => event.type === 'VERIFIED');
   const reversed = record.events.find((event) => event.type === 'REVERSED');
   const allocations = record.allocations.map((allocation) => {
@@ -94,6 +98,9 @@ function projectPayment(record: PaymentRecord): PaymentDto {
   const common = {
     id: record.id,
     customerId: record.customerId,
+    customerName: record.customer.name,
+    transactionDate: record.transactionDate?.toISOString().slice(0, 10) ?? null,
+    recordedByCurrentMember: record.recordedByMembershipId === membershipId,
     amount: record.amount.toFixed(2),
     currency: 'JMD' as const,
     status: (reversed
@@ -132,7 +139,7 @@ function projectPayment(record: PaymentRecord): PaymentDto {
         ...common,
         method: 'BANK_TRANSFER' as const,
         cashReceiptNumber: null,
-        receivingAccount: record.receivingAccount!,
+        receivingAccount: record.receivingAccount,
         bankTransferReference: record.bankTransferReference!,
       };
 }
@@ -161,6 +168,7 @@ export class PaymentsService {
       evidence,
       receivingAccount:
         input.method === 'BANK_TRANSFER' ? input.receivingAccount.trim() : null,
+      transactionDate: input.transactionDate,
     };
     const requestHash = hashRequest('RECORD', normalized);
     try {
@@ -206,6 +214,9 @@ export class PaymentsService {
                 normalized.method === 'BANK_TRANSFER' ? evidence : null,
               evidenceKey: canonicalEvidenceKey(normalized),
               recordedByMembershipId: context.membershipId,
+              transactionDate: normalized.transactionDate
+                ? new Date(`${normalized.transactionDate}T00:00:00.000Z`)
+                : null,
             },
           });
           await tx.paymentLifecycleEvent.create({
@@ -597,7 +608,9 @@ export class PaymentsService {
       { isolationLevel: 'RepeatableRead' },
     );
     return {
-      data: records.map(projectPayment),
+      data: records.map((record) =>
+        projectPayment(record, context.membershipId),
+      ),
       meta: {
         page: query.page,
         pageSize: query.pageSize,
@@ -789,7 +802,7 @@ export class PaymentsService {
       include: includePayment,
     });
     if (!record) throw fault('PAYMENT_NOT_FOUND', 'Payment was not found', 404);
-    return projectPayment(record);
+    return projectPayment(record, context.membershipId);
   }
 
   private async authorize(

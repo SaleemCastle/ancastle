@@ -265,6 +265,17 @@ export function ApplicationShell({
                                 Invoices
                             </Link>
                         )}
+                        {current?.permissions.includes('payment:read') && (
+                            <Link
+                                prefetch={false}
+                                aria-current={activePath === '/app/payments' ? 'page' : undefined}
+                                href={applicationHref('/app/payments', current.organization.id)}
+                                className={navigationClass('/app/payments')}
+                            >
+                                <ReceiptText className="size-4" aria-hidden="true" />
+                                Payments
+                            </Link>
+                        )}
                         {current?.permissions.includes('customer:read') && (
                             <Link
                                 prefetch={false}

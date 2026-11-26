@@ -207,6 +207,14 @@ describe('M6-05 payment migration upgrade (PostgreSQL)', () => {
           'utf8',
         );
         await connection.underlyingDriver().query(integrityMigration);
+        const transactionDateMigration = await readFile(
+          new URL(
+            '../../../prisma/migrations/20261126120000_payment_transaction_date/migration.sql',
+            import.meta.url,
+          ),
+          'utf8',
+        );
+        await connection.underlyingDriver().query(transactionDateMigration);
         expect(
           (
             await database.prisma.payment.findUniqueOrThrow({
@@ -222,12 +230,17 @@ describe('M6-05 payment migration upgrade (PostgreSQL)', () => {
         const upgradedPayment = await database.prisma.payment.findUniqueOrThrow(
           {
             where: { id: paymentId },
-            select: { evidenceKey: true, receivingAccount: true },
+            select: {
+              evidenceKey: true,
+              receivingAccount: true,
+              transactionDate: true,
+            },
           },
         );
         expect(upgradedPayment).toEqual({
           evidenceKey: 'CASH:upgradereceipt',
           receivingAccount: null,
+          transactionDate: null,
         });
         expect(
           (

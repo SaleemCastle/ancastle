@@ -11,8 +11,7 @@ export function formatJmdAmount(amount: string): string {
 export function formatJamaicaDate(value: string): string {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) throw new Error('Invalid calendar date');
-    const [, year, month, day] = match;
-    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12));
+    const date = new Date(value + 'T12:00:00.000Z');
     return new Intl.DateTimeFormat('en-JM', {
         timeZone: 'UTC',
         year: 'numeric',
