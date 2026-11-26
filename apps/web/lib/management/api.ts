@@ -86,6 +86,21 @@ const messages: Record<string, string> = {
     FULFILMENT_REVERSED: 'This fulfilment was reversed and cannot be invoiced.',
     PAYMENT_TERMS_REQUIRED:
         'The source order does not have valid payment terms for invoice issuance.',
+    PAYMENT_EVIDENCE_DUPLICATE:
+        'This payment evidence is already recorded. Review the existing payment before trying again.',
+    PAYMENT_NOT_FOUND: 'This payment is unavailable in the selected organization.',
+    PAYMENT_REVERSED: 'This payment was reversed. Review its updated history.',
+    PAYMENT_ALREADY_VERIFIED: 'This payment was already verified. Review its updated history.',
+    PAYMENT_ALREADY_REVERSED: 'This payment was already reversed. Review its updated history.',
+    PAYMENT_NOT_VERIFIED: 'Verify receipt before allocating these funds.',
+    PAYMENT_SELF_VERIFICATION_DENIED: 'Ask another authorized member to verify this payment.',
+    PAYMENT_ALLOCATION_SCOPE_MISMATCH:
+        'An invoice is no longer eligible. Reload balances and choose again.',
+    PAYMENT_FUNDS_EXCEEDED:
+        'The verified funds available changed. Reload balances and review the amounts.',
+    INVOICE_AMOUNT_EXCEEDED:
+        'The outstanding invoice balance changed. Reload balances and review the amounts.',
+    INVOICE_NOT_FOUND: 'An invoice is unavailable. Reload balances and choose again.',
     ORDER_LINE_LIMIT_REACHED: 'This order has reached its line limit.',
     CUSTOMER_INACTIVE: 'Choose an active customer before saving this draft.',
     SALES_PRODUCT_INACTIVE:

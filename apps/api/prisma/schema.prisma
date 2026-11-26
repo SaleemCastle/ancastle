@@ -919,6 +919,7 @@ model Payment {
   evidenceKey            String        @db.VarChar(500)
   recordedByMembershipId String        @db.Uuid
   recordedAt             DateTime      @default(now())
+  transactionDate        DateTime?     @db.Date
 
   organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   customer     Customer                    @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict)

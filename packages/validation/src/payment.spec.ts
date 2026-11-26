@@ -9,6 +9,20 @@ import {
 const id = '8b286d46-5fce-4bce-ae2c-6c7c754e1cb1';
 
 describe('payment contracts', () => {
+    it('accepts a calendar transaction date and keeps older recording clients compatible', () => {
+        const cash = { customerId: id, amount: '1.00', method: 'CASH', cashReceiptNumber: 'C-1' };
+        expect(recordPaymentSchema.safeParse(cash).success).toBe(true);
+        expect(
+            recordPaymentSchema.safeParse({ ...cash, transactionDate: '2026-02-28' }).success,
+        ).toBe(true);
+        expect(
+            recordPaymentSchema.safeParse({ ...cash, transactionDate: '2026-02-29' }).success,
+        ).toBe(false);
+        expect(
+            recordPaymentSchema.safeParse({ ...cash, transactionDate: '2026-02-28T12:00:00Z' })
+                .success,
+        ).toBe(false);
+    });
     it('accepts exact positive JMD amounts and method-specific evidence', () => {
         expect(
             recordPaymentSchema.safeParse({

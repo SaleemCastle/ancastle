@@ -5,7 +5,14 @@ const money = z.string().regex(/^(?:0|[1-9]\d{0,31})\.\d{2}$/);
 const positiveMoney = money.refine((value) => value !== '0.00');
 const resourceId = z.uuid();
 export const paymentMethodSchema = z.enum(['CASH', 'BANK_TRANSFER']);
-const recordPaymentBase = z.object({ customerId: z.uuid(), amount: positiveMoney });
+const recordPaymentBase = z.object({
+    customerId: z.uuid(),
+    amount: positiveMoney,
+    transactionDate: z.iso
+        .date()
+        .refine((value) => value >= '0001-01-01', 'Invalid year')
+        .optional(),
+});
 export const recordPaymentSchema = z.discriminatedUnion('method', [
     recordPaymentBase
         .extend({ method: z.literal('CASH'), cashReceiptNumber: z.string().trim().min(1).max(200) })
@@ -69,6 +76,9 @@ const paymentAllocationResponseSchema = z
 const paymentBaseSchema = z.object({
     id: resourceId,
     customerId: resourceId,
+    customerName: z.string().optional(),
+    transactionDate: z.iso.date().nullable().optional(),
+    recordedByCurrentMember: z.boolean().optional(),
     amount: positiveMoney,
     currency: z.literal('JMD'),
     status: z.enum(['PENDING_VERIFICATION', 'VERIFIED', 'REVERSED']),
@@ -95,7 +105,7 @@ export const paymentSchema = z.discriminatedUnion('method', [
         .extend({
             method: z.literal('BANK_TRANSFER'),
             cashReceiptNumber: z.null(),
-            receivingAccount: z.string().min(1).max(200),
+            receivingAccount: z.string().min(1).max(200).nullable(),
             bankTransferReference: z.string().min(1).max(200),
         })
         .strict(),

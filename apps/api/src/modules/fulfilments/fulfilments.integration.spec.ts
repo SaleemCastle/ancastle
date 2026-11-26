@@ -2959,15 +2959,30 @@ describe('Atomic fulfilment API and concurrency (PostgreSQL)', () => {
       amount: '12.00',
       method: 'CASH' as const,
       cashReceiptNumber: 'cash-receipt-1',
+      transactionDate: '2026-11-25',
     };
     const cash = await payments.record(context, cashInput, cashKey);
     expect(cash.payment.status).toBe('PENDING_VERIFICATION');
     expect(cash.payment.cashReceiptNumber).toBe('cash-receipt-1');
+    expect(cash.payment.transactionDate).toBe(cashInput.transactionDate);
+    expect(cash.payment.recordedByCurrentMember).toBe(true);
+    expect(
+      (await payments.list(staff, { page: 1, pageSize: 20 })).data.find(
+        (payment) => payment.id === cash.payment.id,
+      )?.recordedByCurrentMember,
+    ).toBe(false);
     expect(
       (await payments.record(context, cashInput, cashKey)).payment.id,
     ).toBe(cash.payment.id);
     await expect(
       payments.record(context, { ...cashInput, amount: '13.00' }, cashKey),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+    await expect(
+      payments.record(
+        context,
+        { ...cashInput, transactionDate: '2026-11-24' },
+        cashKey,
+      ),
     ).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
     await expect(
       payments.record(

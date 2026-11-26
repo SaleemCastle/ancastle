@@ -8,6 +8,7 @@ let mode = {
     contextUnavailable: false,
     contextDelay: 0,
     fulfilmentResponseLoss: 0,
+    paymentResponseLoss: 0,
     fulfilmentConflict: 0,
     fulfilmentValidation: 0,
 };
@@ -33,6 +34,7 @@ const server = createServer(async (request, response) => {
                 contextUnavailable: false,
                 contextDelay: 0,
                 fulfilmentResponseLoss: 0,
+                paymentResponseLoss: 0,
                 fulfilmentConflict: 0,
                 fulfilmentValidation: 0,
             };
@@ -124,6 +126,11 @@ const server = createServer(async (request, response) => {
             },
         );
         const upstreamBody = upstream.status === 204 ? undefined : await upstream.text();
+        if (request.method === 'POST' && /\/payments$/.test(path) && mode.paymentResponseLoss > 0) {
+            mode.paymentResponseLoss--;
+            response.destroy();
+            return;
+        }
         if (
             request.method === 'POST' &&
             /\/orders\/[^/]+\/fulfilments$|\/fulfilments\/[^/]+\/reverse$/.test(path) &&

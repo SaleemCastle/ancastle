@@ -24,6 +24,9 @@ export interface PaymentAllocation {
 interface PaymentBase {
     id: string;
     customerId: string;
+    customerName?: string;
+    transactionDate?: string | null;
+    recordedByCurrentMember?: boolean;
     amount: string;
     currency: 'JMD';
     method: PaymentMethod;
@@ -50,7 +53,7 @@ export type Payment = PaymentBase &
         | {
               method: 'BANK_TRANSFER';
               cashReceiptNumber: null;
-              receivingAccount: string;
+              receivingAccount: string | null;
               bankTransferReference: string;
           }
     );
